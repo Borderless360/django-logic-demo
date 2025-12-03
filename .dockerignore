@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Django
+*.log
+db.sqlite3
+db.sqlite3-journal
+
+# Documentation
+docs/_build/
+
+# CI/CD
+.travis.yml
+.github/
+
+# Other
+LICENSE
+makefile
+
+# draw.io
+*.drawio
+*.bkp

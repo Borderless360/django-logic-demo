@@ -1,0 +1,43 @@
+x-demo:
+  &demo
+  build: { context: . }
+  stdin_open: true
+  tty       : true
+  depends_on:
+    - db
+    - redis
+  volumes:
+    - .:/home/app/src
+  environment:
+    DEBUG       : True 
+    DATABASE_URL: postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+    REDIS_URL   : redis://redis:6379
+
+
+services:
+  db:
+    image: postgres:17.5-alpine3.21
+    # Don't need to save data between runs, each run should starts from empty scratch 
+    # volumes:
+    #   - db:/var/lib/postgresql/data
+    ports:
+      - 5432:5432  # expose it for dev tools
+    environment:
+      POSTGRES_USER    : ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DATABASE: ${DB_NAME}
+  redis:
+    image: redis:7.4.7-alpine3.21
+    ports:
+      - 6379:6379 # expose it for dev tools
+    # Don't need to save data between runs, each run should starts from empty scratch 
+    # volumes: 
+    #   - redis:/data
+  demo:
+    <<: *demo
+    ports:
+      - 5678:5678  # for attach debugger to the container
+    command: python manage.py runserver 0.0.0.0:8000
+  demo-worker:
+    <<: *demo
+    command: celery -A .celery_app worker -l INFO --concurrency=2

@@ -1,0 +1,28 @@
+[project]
+name = "Django-Logic-Demo"
+version = "0.0.1"
+description = ""
+authors = [
+    { name = "Emil", email = "emil@borderless360.com" },
+    { name = "Andrey", email = "andrey@borderless360.com" },
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "celery == 5.5.3",
+    "Django == 5.2.8",
+    "django-logic == 0.1.6",
+    "django-logic-celery == 0.0.9",
+    "psycopg2-binary == 2.9.11",
+    "redis == 7.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pudb            ~=2024.1.2", # Full-screen console debugger for Python
+    "granian[reload] ~=2.4.2"   , # Granian is a Rust HTTP server for Python applications built on top of Hyper and Tokio.
+    "ruff            ~=0.12.7"  , # Ruff is a fast, opinionated, and configurable Python linter.
+]
+
+[tool.poetry]
+package-mode = false
