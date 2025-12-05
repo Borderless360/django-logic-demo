@@ -6,33 +6,60 @@ x-demo:
   depends_on:
     - db
     - redis
+    - clickhouse
   volumes:
     - .:/home/app/src
   environment:
+    DJANGO_SETTINGS_MODULE: demo.settings
     DEBUG       : True 
-    DATABASE_URL: postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
-    REDIS_URL   : redis://redis:6379
+    DB_HOST: ${DB_HOST}
+    DB_PORT: ${DB_PORT}
+    DB_NAME: ${DB_NAME}
+    DB_USER: ${DB_USER}
+    DB_PASSWORD: ${DB_PASSWORD}
+    REDIS_URL: redis://redis:6379
+    CELERY_BROKER_URL: redis://redis:6379
+    CLICKHOUSE_HOST: ${CLICKHOUSE_HOST}
+    CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE}
+    CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+    CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
 
+volumes:
+  db:
+  redis:
+  clickhouse:
 
 services:
   db:
     image: postgres:17.5-alpine3.21
-    # Don't need to save data between runs, each run should starts from empty scratch 
-    # volumes:
-    #   - db:/var/lib/postgresql/data
+    volumes:
+      - db:/var/lib/postgresql/data
     ports:
       - 5432:5432  # expose it for dev tools
     environment:
       POSTGRES_USER    : ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DATABASE: ${DB_NAME}
+      POSTGRES_DB      : ${DB_NAME}
   redis:
     image: redis:7.4.7-alpine3.21
     ports:
       - 6379:6379 # expose it for dev tools
-    # Don't need to save data between runs, each run should starts from empty scratch 
-    # volumes: 
-    #   - redis:/data
+    volumes: 
+      - redis:/data
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.7
+    ports:
+        - 8123:8123 # HTTP interface
+        - 9000:9000 # Native TCP interface
+    volumes:
+      - clickhouse:/var/lib/clickhouse # data
+    ulimits:
+      nofile: 262144 # Increase open file limit for ClickHouse
+    environment:
+      CLICKHOUSE_USER    : ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
   demo:
     <<: *demo
     ports:
@@ -40,4 +67,4 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
   demo-worker:
     <<: *demo
-    command: celery -A .celery_app worker -l INFO --concurrency=2
+    command: celery -A demo.celery_app worker -l INFO --concurrency=2

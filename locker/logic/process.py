@@ -1,6 +1,6 @@
-from demo.locker.conditions import is_user, is_staff, is_planned, is_lock_available
-from demo.locker.models import Lock, LOCK_STATES
 from django_logic import Process, Transition, Action, ProcessManager
+from .conditions import is_user, is_staff, is_planned, is_lock_available
+from .models import Lock, LOCK_STATES
 
 
 class UserLockerProcess(Process):

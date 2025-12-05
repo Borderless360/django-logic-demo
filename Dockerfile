@@ -20,4 +20,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Add the virtual environment to PATH
 ENV PATH="/home/app/.venv/bin:$PATH"
 
+# Disable bytecode compilation
+ENV PYTHONDONTWRITEBYTECODE=1
+# Unbuffer stdout and stderr
+ENV PYTHONUNBUFFERED=1
 WORKDIR /home/app/src

@@ -10,9 +10,13 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "celery == 5.5.3",
+    "clickhouse-connect ~=0.9.2",
     "Django == 5.2.8",
     "django-logic == 0.1.6",
     "django-logic-celery == 0.0.9",
+    "django-model-utils == 5.0.0",
+    "django-environ == 0.12.0",
+    "django-extensions == 4.1",
     "psycopg2-binary == 2.9.11",
     "redis == 7.1.0",
 ]

@@ -1,6 +1,7 @@
 from django.db import models
 from model_utils import Choices
 
+
 A_STATES = Choices(
     ('A0', 'A0'),
     ('A1', 'A1'),

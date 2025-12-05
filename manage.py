@@ -8,7 +8,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 
 def main():
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'demo.settings')
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'main.settings')
     from django.core.management import execute_from_command_line
     execute_from_command_line(sys.argv)
 
