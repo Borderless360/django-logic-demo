@@ -1,4 +1,6 @@
 import os
+import sys
+import logging
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,6 +29,7 @@ INSTALLED_APPS = [
     'abstract',
     'locker',
     'invoice',
+    'clickhouse',
 ]
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -58,3 +61,38 @@ TEMPLATES = [
         },
     },
 ]
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'stream': sys.stdout,
+        },
+        'file': {
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'django-logic.log'),
+            'formatter': 'verbose',
+        },
+        'clickhouse': {
+            'class': 'clickhouse.logging.ClickHouseHandler',
+            'level': logging.INFO,
+        },
+    },
+    'formatters': {
+        'verbose': {
+            'format': '%(levelname) -10s %(asctime)s %(module)s:%(lineno)s %(funcName)s %(message)s',
+        },
+    },
+    'loggers': {
+        'main': {
+            'handlers': ['console'],
+            'level': logging.INFO,
+        },
+        'django-logic': {
+            'handlers': ['console', 'file', 'clickhouse'],
+            'level': logging.INFO,
+        },
+    },
+}

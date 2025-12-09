@@ -24,3 +24,5 @@ show-sql-migrate:
 	docker compose -p $(PROJECT_NAME) exec demo python manage.py sqlmigrate $(a) $(m)
 migrate:
 	make manage s=demo c=migrate
+test_locker:
+	make manage s=demo c=test_locker

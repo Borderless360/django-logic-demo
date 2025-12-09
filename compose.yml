@@ -11,18 +11,19 @@ x-demo:
     - .:/home/app/src
   environment:
     DJANGO_SETTINGS_MODULE: demo.settings
-    DEBUG       : True 
-    DB_HOST: ${DB_HOST}
-    DB_PORT: ${DB_PORT}
-    DB_NAME: ${DB_NAME}
-    DB_USER: ${DB_USER}
-    DB_PASSWORD: ${DB_PASSWORD}
+    DEBUG: True 
+    DB_HOST: ${DB_HOST:-db}
+    DB_PORT: ${DB_PORT:-5432}
+    DB_NAME: ${DB_NAME:-demo}
+    DB_USER: ${DB_USER:-postgres}
+    DB_PASSWORD: ${DB_PASSWORD:-123456}
+    CLICKHOUSE_HOST    : ${CLICKHOUSE_HOST:-clickhouse}
+    CLICKHOUSE_PORT    : ${CLICKHOUSE_PORT:-8123}
+    CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-default}
+    CLICKHOUSE_USER    : ${CLICKHOUSE_USER:-admin}
+    CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-123456}
     REDIS_URL: redis://redis:6379
     CELERY_BROKER_URL: redis://redis:6379
-    CLICKHOUSE_HOST: ${CLICKHOUSE_HOST}
-    CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE}
-    CLICKHOUSE_USER: ${CLICKHOUSE_USER}
-    CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
 
 volumes:
   db:
@@ -37,28 +38,27 @@ services:
     ports:
       - 5432:5432  # expose it for dev tools
     environment:
-      POSTGRES_USER    : ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB      : ${DB_NAME}
+      POSTGRES_USER    : ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-123456}
+      POSTGRES_DB      : ${DB_NAME:-demo}
   redis:
     image: redis:7.4.7-alpine3.21
     ports:
       - 6379:6379 # expose it for dev tools
     volumes: 
       - redis:/data
+  # ClickHouse used as a storage for logs (alternative stdout/stderr)
   clickhouse:
     image: clickhouse/clickhouse-server:25.7
     ports:
-        - 8123:8123 # HTTP interface
-        - 9000:9000 # Native TCP interface
+      - 8123:8123 # HTTP interface for dev tools
+      - 9000:9000 # Native TCP interface for dev tools
     volumes:
       - clickhouse:/var/lib/clickhouse # data
-    ulimits:
-      nofile: 262144 # Increase open file limit for ClickHouse
     environment:
-      CLICKHOUSE_USER    : ${CLICKHOUSE_USER}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE}
+      CLICKHOUSE_USER    : ${CLICKHOUSE_USER:-admin}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-123456}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-default}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
   demo:
     <<: *demo
