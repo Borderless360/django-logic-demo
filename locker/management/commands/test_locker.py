@@ -20,7 +20,9 @@ class Command(BaseCommand):
         
         lock = Lock.objects.create(status=LOCK_STATES.open)
         lock.process.lock(user=user)
+        print(f"Lock status: {lock.status}")
         lock.process.unlock(user=staff_user)
+        print(f"Lock status: {lock.status}")
         # TODO: fix maintain transition
         # lock.process.maintain(user=staff_user)
         print(f"Lock status: {lock.status}")

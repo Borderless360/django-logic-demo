@@ -62,6 +62,10 @@ TEMPLATES = [
     },
 ]
 
+# TRANSITIONS = os.getenv('TRANSITIONS', 'django_logic.transition.Transition')
+TRANSITIONS = os.getenv('TRANSITIONS', 'django_logic_celery.transitions.CeleryTransition')
+ACTIONS = os.getenv('ACTIONS', 'django_logic_celery.transitions.CeleryAction')
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

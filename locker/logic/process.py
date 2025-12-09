@@ -1,4 +1,5 @@
-from django_logic import Process, Transition, Action
+from django_logic import Process
+from demo.transition import ProxyTransition as Transition, ProxyAction as Action
 from .conditions import is_user, is_staff, is_planned, is_lock_available
 from ..models import LOCK_STATES
 
