@@ -1,3 +1,4 @@
+.pytest_cache/
 /django_logic/
 /django_logic_celery/
 /logs/*.log

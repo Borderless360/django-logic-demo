@@ -33,12 +33,12 @@ class B(models.Model):
     name = models.CharField(max_length=100)
     raise_error = models.BooleanField(default=False, help_text='If True, the process will raise an error')
     error_code = models.IntegerField(default=0, help_text='Catched error code')
-    c = models.ForeignKey(C, on_delete=models.CASCADE)
+    c = models.ForeignKey(C, on_delete=models.CASCADE, null=True, blank=True)
     status = models.CharField(max_length=3, choices=B_STATES, default=B_STATES.B0)
 
 class A(models.Model):
     name = models.CharField(max_length=100)
     raise_error = models.BooleanField(default=False, help_text='If True, the process will raise an error')
     error_code = models.IntegerField(default=0, help_text='Catched error code')
-    b = models.ForeignKey(B, on_delete=models.CASCADE)
+    b = models.ForeignKey(B, on_delete=models.CASCADE, null=True, blank=True)
     status = models.CharField(max_length=3, choices=A_STATES, default=A_STATES.A0)

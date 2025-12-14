@@ -1,7 +1,9 @@
 from django_logic import Process
-from demo.transition import ProxyTransition as Transition, ProxyAction as Action
-from .conditions import is_user, is_staff, is_planned, is_lock_available
-from ..models import LOCK_STATES
+from core.transition import ProxyTransition as Transition, ProxyAction as Action
+from core.logic.side_effects import long_action
+from core.logic.conditions import is_user, is_staff
+from locker.logic.conditions import is_planned, is_lock_available
+from locker.models import LOCK_STATES
 
 
 class UserLockerProcess(Process):
@@ -14,12 +16,15 @@ class UserLockerProcess(Process):
         Transition(
             action_name='lock',
             sources=[LOCK_STATES.open],
-            target=LOCK_STATES.locked
+            target=LOCK_STATES.locked,
+            side_effects=[
+                long_action,    # simulate long action
+            ],
         ),
         Transition(
             action_name='unlock',
             sources=[LOCK_STATES.locked],
-            target=LOCK_STATES.open
+            target=LOCK_STATES.open,
         )
     ]
 

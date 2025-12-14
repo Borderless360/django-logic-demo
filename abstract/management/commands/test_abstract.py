@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
+from abstract.models import B, B_STATES
 
 User = get_user_model()
 
@@ -18,3 +19,7 @@ class Command(BaseCommand):
         )
         
         print(f"Abstract logic test")
+
+        # test next transition with no permissions
+        b = B.objects.create(status=B_STATES.B0)
+        b.process.B0_B1(user=staff_user)

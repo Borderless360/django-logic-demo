@@ -26,3 +26,7 @@ migrate:
 	make manage s=demo c=migrate
 test_locker:
 	make manage s=demo c=test_locker
+test_abstract:
+	make manage s=demo c=test_abstract
+test:
+	docker compose -p $(PROJECT_NAME) exec demo pytest

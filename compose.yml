@@ -4,11 +4,13 @@ x-demo:
   stdin_open: true
   tty       : true
   depends_on:
-    - db
-    - redis
-    - clickhouse
+    db: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    clickhouse: { condition: service_healthy }
   volumes:
     - .:/home/app/src
+  env_file:
+    - .env
   environment:
     DJANGO_SETTINGS_MODULE: demo.settings
     DEBUG: True 
@@ -41,12 +43,24 @@ services:
       POSTGRES_USER    : ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-123456}
       POSTGRES_DB      : ${DB_NAME:-demo}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${DB_USER:-postgres}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
   redis:
     image: redis:7.4.7-alpine3.21
     ports:
       - 6379:6379 # expose it for dev tools
     volumes: 
       - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
   # ClickHouse used as a storage for logs (alternative stdout/stderr)
   clickhouse:
     image: clickhouse/clickhouse-server:25.7
@@ -60,6 +74,12 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-123456}
       CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-default}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
   demo:
     <<: *demo
     ports:

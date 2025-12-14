@@ -26,7 +26,19 @@ dev = [
     "pudb            ~=2024.1.2", # Full-screen console debugger for Python
     "granian[reload] ~=2.4.2"   , # Granian is a Rust HTTP server for Python applications built on top of Hyper and Tokio.
     "ruff            ~=0.12.7"  , # Ruff is a fast, opinionated, and configurable Python linter.
+    "pytest          ~=9.0.2"   , # pytest is a testing framework for Python.
+    "pytest-django   ~=4.11.1"  , # pytest-django is a plugin for pytest that provides a Django test runner and a Django test client.
 ]
 
 [tool.poetry]
 package-mode = false
+
+[tool.pytest]
+minversion = "9.0"
+addopts = ["-ra", "-q"]
+testpaths = [
+    "abstract/e2e",
+    "locker/e2e",
+    "invoice/e2e",
+]
+# django_settings_module = "demo.settings"

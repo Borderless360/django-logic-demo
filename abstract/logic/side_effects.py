@@ -1,14 +1,6 @@
-import time
-from .models import A
+from abstract.models import A
 
 # NOTE: Side effects also can be used as callbacks
-
-def short_action(*args, **kwargs):
-    pass
-
-def long_action(*args, **kwargs):
-    time.sleep(10)
-    pass
 
 def fail(obj, *args, **kwargs):
     if obj.raise_error:
