@@ -15,6 +15,7 @@ down:
 	docker compose -p $(PROJECT_NAME) down
 reset:
 	docker compose -p $(PROJECT_NAME) down -v
+	rm logs/*.log
 
 manage:
 	docker compose -p $(PROJECT_NAME) exec $(s) python manage.py $(c)

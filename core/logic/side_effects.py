@@ -9,10 +9,6 @@ def short_action(*args, **kwargs):
 def long_action(*args, **kwargs):
     time.sleep(10)
 
-
-def do_something_a(*args, **kwargs):
-    time.sleep(1)
-def do_something_b(*args, **kwargs):
-    time.sleep(1)
-def do_something_c(*args, **kwargs):
-    time.sleep(1)
+def error_for_superuser(obj, *args, **kwargs):
+    if kwargs.get('user').is_superuser:
+        raise Exception('Error for superuser')
