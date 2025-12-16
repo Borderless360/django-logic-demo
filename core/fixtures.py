@@ -14,7 +14,6 @@ def user():
         is_superuser=False
     )
 
-
 @pytest.fixture
 def staff_user():
     """Create a staff test user."""
@@ -24,7 +23,6 @@ def staff_user():
         is_staff=True,
         is_superuser=False
     )
-
 
 @pytest.fixture
 def superuser():

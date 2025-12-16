@@ -1,15 +1,11 @@
 import pytest
 from django_logic import Process
-from core.transition import ProxyTransition as Transition
+from core.transition import BaseProcess, ProxyTransition as Transition
 from core.logic.side_effects import error_for_superuser
 from abstract.models import A, STATES
 from abstract.logic.callbacks import save_error
 
-class BasicProcess(Process):
-    # TODO: field_name should be 'status' by default into Process class
-    def __init__(self, field_name='status', instance=None, state=None):
-        super().__init__(field_name, instance, state)
-
+class BasicProcess(BaseProcess):
     transitions = [
         Transition(
             action_name='go_to_B',

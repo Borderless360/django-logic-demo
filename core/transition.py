@@ -1,8 +1,14 @@
-import os
 from django.utils.module_loading import import_string
 from django.conf import settings
+from django_logic import Process
 from django_logic.transition import BaseTransition
 from django_logic.state import State
+
+
+class BaseProcess(Process):
+    # TODO: field_name should be 'status' by default into Process class
+    def __init__(self, field_name='status', instance=None, state=None):
+        super().__init__(field_name, instance, state)
 
 
 class ProxyTransition(BaseTransition):
