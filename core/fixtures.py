@@ -1,35 +1,18 @@
 import pytest
-from django.contrib.auth import get_user_model
-
-User = get_user_model()
+from core.utils import get_or_create_user, get_or_create_staff_user, get_or_create_superuser
 
 
 @pytest.fixture
 def user():
     """Create a regular test user."""
-    return User.objects.create_user(
-        username='test_user',
-        password='testpass123',
-        is_staff=False,
-        is_superuser=False
-    )
+    return get_or_create_user()
 
 @pytest.fixture
 def staff_user():
     """Create a staff test user."""
-    return User.objects.create_user(
-        username='test_staff_user',
-        password='testpass123',
-        is_staff=True,
-        is_superuser=False
-    )
+    return get_or_create_staff_user()
 
 @pytest.fixture
 def superuser():
     """Create a superuser test user."""
-    return User.objects.create_superuser(
-        username='test_superuser',
-        password='testpass123',
-        is_staff=True,
-        is_superuser=True
-    )
+    return get_or_create_superuser()

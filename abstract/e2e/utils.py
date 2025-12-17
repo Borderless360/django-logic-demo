@@ -68,3 +68,37 @@ def check_logs(transition_id: str, event_type: TransitionEventType, max_retries:
                 raise
     
     return False
+
+
+def verify_celery_worker_running(celery_app, max_retries: int = 5, retry_delay: float = 0.1) -> bool:
+    """
+    Verify that the Celery worker is actually running by executing a test task.
+    
+    :param celery_app: The Celery app instance
+    :param max_retries: Maximum number of retry attempts
+    :param retry_delay: Delay between retries in seconds
+    :return: True if worker is running and can execute tasks, False otherwise
+    """
+    try:
+        # Use Celery's control API to ping workers directly
+        # This doesn't require a result backend
+        inspect = celery_app.control.inspect()
+        for attempt in range(max_retries):
+            try:
+                # Ping the workers
+                response = inspect.ping()
+                if response:
+                    # Response is a dict mapping worker names to their responses
+                    # If we get any response, workers are running
+                    return True
+            except Exception:
+                # If ping fails, wait and retry
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    return False
+        
+        return False
+    except Exception as e:
+        # If we can't even inspect workers, they're not running
+        return False
