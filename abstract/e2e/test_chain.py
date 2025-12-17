@@ -1,10 +1,11 @@
 import pytest
+import time
 from abstract.models import A, STATES
-from django_logic import Process
 from core.transition import BaseProcess, ProxyTransition as Transition
 from core.logic.side_effects import error_for_superuser
 from core.logic.conditions import is_user
 from abstract.logic.callbacks import save_error
+from abstract.e2e.utils import wait_for_transition
 
 
 def run_action(action_name):
@@ -29,6 +30,8 @@ def test_chain_of_transitions(user):
 
     process = ChainProcess(instance=a)
     process.go_to_B(user=user)
+    # Wait for chain of transitions to complete (B -> C -> D)
+    # assert wait_for_transition(a, STATES.D, max_retries=25, retry_delay=0.3), "Chain transition did not complete"
     a.refresh_from_db()
     assert a.status == STATES.D
 
@@ -43,6 +46,8 @@ def test_chain_of_transitions_with_no_permissions(staff_user):
 
     process = ChainProcess(instance=a)
     process.go_to_B(user=staff_user)
+    # Wait for chain to complete up to C (B -> C, but C -> D fails due to permissions)
+    # assert wait_for_transition(a, STATES.C, max_retries=25, retry_delay=0.3), "Chain transition did not complete to C"
     a.refresh_from_db()
     assert a.status == STATES.C
 
@@ -56,6 +61,8 @@ def test_chain_of_transitions_with_error_for_superuser(superuser):
     assert a.status == STATES.A
     process = ChainProcess(instance=a)
     process.go_to_B(user=superuser)
+    # Wait for error to be handled (should stay in B)
+    # time.sleep(1.0)  # Give time for on_commit to fire and failure callback to execute
     a.refresh_from_db()
     assert a.status == STATES.B
     assert a.error == 'Error for superuser'

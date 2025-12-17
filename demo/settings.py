@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'locker',
     'invoice',
     'clickhouse',
+    'django_logic_ext',
 ]
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -99,3 +100,10 @@ LOGGING = {
         },
     },
 }
+
+DJANGO_LOGIC_EXT_ENABLED = os.getenv('DJANGO_LOGIC_EXT_ENABLED', True)
+DJANGO_LOGIC_EXT_OFFSET_TIME_MINUTES = os.getenv('DJANGO_LOGIC_EXT_OFFSET_TIME_MINUTES', 10)
+DJANGO_LOGIC_EXT_MAX_ERRORS_COUNT = os.getenv('DJANGO_LOGIC_EXT_MAX_ERRORS_COUNT', 3)
+DJANGO_LOGIC_EXT_CLEANUP_DAYS = os.getenv('DJANGO_LOGIC_EXT_CLEANUP_DAYS', 7)
+
+REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/1')

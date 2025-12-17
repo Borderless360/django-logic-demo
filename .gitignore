@@ -2,3 +2,4 @@
 /django_logic/
 /django_logic_celery/
 /logs/*.log
+__pycache__/

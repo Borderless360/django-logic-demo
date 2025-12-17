@@ -11,5 +11,11 @@ def is_user(instance, user):
         return False
     return not user.is_staff
 
+def is_superuser(instance, user):
+    print(f"is_superuser: {user}, {user.is_superuser} {instance}")
+    if not user:
+        return False
+    return user.is_superuser
+
 def disable():
     return False

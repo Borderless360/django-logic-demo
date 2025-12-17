@@ -5,7 +5,6 @@ from celery import shared_task
 def short_action(*args, **kwargs):
     pass
 
-@shared_task(acks_late=True)
 def long_action(*args, **kwargs):
     time.sleep(10)
 
