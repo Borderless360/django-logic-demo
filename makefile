@@ -30,4 +30,4 @@ test_locker:
 test_abstract:
 	make manage s=demo c=test_abstract
 test:
-	docker compose -p $(PROJECT_NAME) exec demo pytest -v -s --log-cli-level=INFO
+	docker compose -p $(PROJECT_NAME) exec demo pytest
