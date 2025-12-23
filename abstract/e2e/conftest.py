@@ -1,8 +1,36 @@
 import os
 import pytest
+from django.core.cache import cache
+from django.conf import settings
 from abstract.e2e.utils import verify_celery_worker_running
 
 pytest_plugins = ["celery.contrib.pytest", "core.fixtures", ]
+
+@pytest.fixture(scope='session')
+def django_db_setup():
+    """Use existing demo database for e2e tests instead of creating a test database.
+    
+    This fixture overrides pytest-django's default behavior to prevent it from
+    creating a test database. Instead, it uses the existing demo database
+    configured in Django settings (from compose.yml).
+    
+    By not calling the default database setup, pytest-django will use the
+    existing database configuration from Django settings.
+    """
+    # Ensure we use the existing database from Django settings
+    # Don't create a test database - use the demo database directly
+    # The database configuration comes from environment variables in compose.yml
+    settings.DATABASES['default']['TEST'] = {
+        'NAME': settings.DATABASES['default']['NAME'],  # Use same database name
+        'MIRROR': None,  # Required by Django test framework
+    }
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    """Clear cache before each test to prevent state locks from persisting."""
+    cache.clear()
+    yield
+    cache.clear()
 
 @pytest.fixture(scope='session')
 def celery_config():

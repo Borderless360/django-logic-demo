@@ -63,17 +63,9 @@ class Process(object):
 
         if len(transitions) == 1:
             transition = transitions[0]
-            # DEPRECATED
-            self.logger.info(f"{self.state.instance_key}, process {self.process_name} "
-                             f"executes '{action_name}' transition from {self.state.cached_state} "
-                             f"to {transition.target}",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=self.state.get_log_data())
-
             logger.info(f"{self.state.instance_key}, process {self.process_name} "
                              f"executes '{action_name}' transition from {self.state.cached_state} "
                              f"to {transition.target}",
-                            #  log_type=LogType.TRANSITION_DEBUG,
                             extra={
                                 'log_data': self.state.get_log_data(),
                             })
@@ -89,13 +81,6 @@ class Process(object):
             return transition.change_state(self.state, **kwargs)
 
         elif len(transitions) > 1:
-            # DEPRECATED
-            self.logger.info(f"Runtime error: {self.state.instance_key} has several "
-                             f"transitions with action name '{action_name}'. "
-                             f"Make sure to specify conditions and permissions accordingly to fix such case",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=self.state.get_log_data())
-
             logger.info(f"Runtime error: {self.state.instance_key} has several "
                              f"transitions with action name '{action_name}'. "
                              f"Make sure to specify conditions and permissions accordingly to fix such case",
@@ -104,12 +89,6 @@ class Process(object):
                     'log_data': self.state.get_log_data()
                 })
             raise TransitionNotAllowed("There are several transitions available")
-
-        # DEPRECATED
-        self.logger.info(f"Process class {self.__class__} for object {self.instance.id} has no transition "
-                         f"with action name {action_name}, user {user}",
-                         log_type=LogType.TRANSITION_DEBUG,
-                         log_data=self.state.get_log_data())
 
         logger.info(f"Process class {self.__class__} for object {self.instance.id} has no transition "
                          f"with action name {action_name}, user {user}",

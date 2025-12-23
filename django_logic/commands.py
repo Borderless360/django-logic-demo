@@ -46,10 +46,6 @@ class Permissions(BaseCommand):
 class SideEffects(BaseCommand):
     def execute(self, state: State, **kwargs):
         """Side-effects execution"""
-        # DEPRECATED
-        self.logger.info(f"{state.instance_key} side effects of '{self._transition.action_name}' started",
-                         log_type=LogType.TRANSITION_DEBUG,
-                         log_data=state.get_log_data())
         try:
             for command in self._commands:
                 logger.info(
@@ -62,23 +58,12 @@ class SideEffects(BaseCommand):
                 )
                 command(state.instance, **kwargs)
         except Exception as error:
-            # DEPRECATED
-            self.logger.info(f"{state.instance_key} side effects of '{self._transition.action_name}' failed "
-                             f"with {error}",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=state.get_log_data())
-            self.logger.error(error, log_type=LogType.TRANSITION_ERROR, log_data=state.get_log_data())
-
             logger.error(error,
                 extra={
                     'tr_id': kwargs.get("tr_id"), 
                 })
             self._transition.fail_transition(state, error, **kwargs)
         else:
-            # DEPRECATED
-            self.logger.info(f"{state.instance_key} side-effects of '{self._transition.action_name}' succeeded",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=state.get_log_data())
             self._transition.complete_transition(state, **kwargs)
 
 

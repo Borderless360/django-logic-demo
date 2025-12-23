@@ -1,25 +1,15 @@
 import time
-from typing import List, Dict, Set
+from django_logic.state import State
 from clickhouse.client import client
 from django_logic.logger import TransitionEventType
 
 
-def wait_for_transition(instance, expected_state: str, max_retries: int = 10, retry_delay: float = 0.2) -> bool:
+def wait_state_unlock(state: State, max_retries: int = 10, retry_delay: float = 0.5) -> bool:
     """
-    Wait for a transition to complete by checking if the instance's state matches the expected state.
-    This is useful when transitions are executed as Celery tasks and we need to wait for them to complete.
-    
-    :param instance: The model instance to check
-    :param expected_state: The expected state value
-    :param max_retries: Maximum number of retry attempts
-    :param retry_delay: Delay between retries in seconds
-    :return: True if state matches expected state, False otherwise
+    Wait for a state to be unlocked.
     """
     for attempt in range(max_retries):
-        instance.refresh_from_db()
-        # Get the status field (assuming it's called 'status')
-        current_state = getattr(instance, 'status', None)
-        if current_state == expected_state:
+        if not state.is_locked():
             return True
         if attempt < max_retries - 1:
             time.sleep(retry_delay)

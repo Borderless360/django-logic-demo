@@ -5,7 +5,7 @@ from core.transition import BaseProcess, ProxyTransition as Transition
 from core.logic.side_effects import error_for_superuser
 from core.logic.conditions import is_user
 from abstract.logic.callbacks import save_error
-from abstract.e2e.utils import wait_for_transition
+# from abstract.e2e.utils import wait_for_transition
 
 
 def run_action(action_name):

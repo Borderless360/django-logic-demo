@@ -14,9 +14,21 @@ DATABASES = {
         'NAME'      : os.getenv('DB_NAME'),
         'USER'      : os.getenv('DB_USER'),
         'PASSWORD'  : os.getenv('DB_PASSWORD'),
+        'TEST': {
+            'MIRROR': None,
+        },
     }
 }
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL')
+
+REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/1')
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': REDIS_URL,
+    }
+}
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -105,5 +117,3 @@ DJANGO_LOGIC_EXT_ENABLED = os.getenv('DJANGO_LOGIC_EXT_ENABLED', True)
 DJANGO_LOGIC_EXT_OFFSET_TIME_MINUTES = os.getenv('DJANGO_LOGIC_EXT_OFFSET_TIME_MINUTES', 10)
 DJANGO_LOGIC_EXT_MAX_ERRORS_COUNT = os.getenv('DJANGO_LOGIC_EXT_MAX_ERRORS_COUNT', 3)
 DJANGO_LOGIC_EXT_CLEANUP_DAYS = os.getenv('DJANGO_LOGIC_EXT_CLEANUP_DAYS', 7)
-
-REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/1')

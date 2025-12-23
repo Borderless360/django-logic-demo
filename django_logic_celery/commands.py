@@ -1,135 +1,9 @@
-import logging
-
-from celery import signature, group, chain, shared_task
-from celery.result import AsyncResult
-from django.apps import apps
+from celery import signature, group, chain
 from django.db import transaction
+from django_logic.logger import logger as logging
 from django_logic.commands import SideEffects, Callbacks
 from django_logic.state import State
-
-
-def _find_transition_in_process(process, action_name):
-    """Recursively search for transition by action_name in process and nested processes"""
-    # Search in current process transitions
-    for transition in process.transitions:
-        if transition.action_name == action_name:
-            return transition
-    
-    # Search in nested processes recursively
-    for sub_process_class in process.nested_processes:
-        sub_process = sub_process_class(state=process.state)
-        result = _find_transition_in_process(sub_process, action_name)
-        if result is not None:
-            return result
-    
-    return None
-
-
-def get_transition_from_process(instance, process_name, action_name):
-    """Helper function to retrieve transition from process by action_name"""
-    process = getattr(instance, process_name)
-    transition = _find_transition_in_process(process, action_name)
-    if transition is None:
-        raise ValueError(f"Transition with action_name '{action_name}' not found in process '{process_name}'")
-    return transition
-
-
-@shared_task(acks_late=True)
-def complete_transition(*args, **kwargs):
-    """Completes transition """
-    app_label = kwargs['app_label']
-    model_name = kwargs['model_name']
-    instance_id = kwargs['instance_id']
-    action_name = kwargs['action_name']
-    process_name = kwargs['process_name']
-
-    app = apps.get_app_config(app_label)
-    model = app.get_model(model_name)
-    instance = model.objects.get(id=instance_id)
-    state = getattr(instance, process_name).state
-    transition = get_transition_from_process(instance, process_name, action_name)
-
-    logging.info(f'{state.instance_key} complete transition task started')
-    transition.complete_transition(state, **kwargs)
-    logging.info(f'{state.instance_key} complete transition task finished')
-
-
-@shared_task(acks_late=True)
-def fail_transition(task_id, *args, **kwargs):
-    """
-    Transition failure handler handles exceptions and runs fail_transition method of provided Transition.
-    Make sure to catch all exceptions by this failure handler as otherwise
-    it leads to the worker crash.
-    """
-    app_label = kwargs['app_label']
-    model_name = kwargs['model_name']
-    instance_id = kwargs['instance_id']
-    action_name = kwargs['action_name']
-    process_name = kwargs['process_name']
-
-    try:
-        app = apps.get_app_config(app_label)
-        model = app.get_model(kwargs['model_name'])
-        instance = model.objects.get(id=kwargs['instance_id'])
-        state = getattr(instance, kwargs['process_name']).state
-        transition = get_transition_from_process(instance, process_name, action_name)
-        try:
-            # If exception is raised in success callback, it will be passed through args
-            error = args[0]
-        except IndexError:
-            task = AsyncResult(task_id)
-            error = task.info
-        logging.info(f"{state.instance_key} action '{transition.action_name}' failed with error {error}")
-        logging.exception(error)
-        transition.fail_transition(state, error, **kwargs)
-    except Exception as error:
-        logging.info(f'{app_label}-{model_name}-{action_name}-{instance_id}'
-                      f'failure handler failed with error: {error}')
-        logging.exception(error)
-
-
-@shared_task(acks_late=True)
-def run_side_effects_as_task(app_label, model_name, action_name, instance_id, process_name, **kwargs):
-    """It runs all side-effects of provided transition under a single task"""
-    app = apps.get_app_config(app_label)
-    model = app.get_model(model_name)
-    instance = model.objects.get(id=instance_id)
-    state = getattr(instance, process_name).state
-    transition = get_transition_from_process(instance, process_name, action_name)
-    logging.info(f"{state.instance_key} side effects of '{transition.action_name}' started")
-
-    try:
-        for side_effect in transition.side_effects.commands:
-            side_effect(instance)
-    except Exception as error:
-        logging.info(f"{state.instance_key} side effects of '{transition.action_name}' failed with error: {error}")
-        logging.exception(error)
-        transition.fail_transition(state, error, **kwargs)
-    else:
-        logging.info(f"{state.instance_key} side effects of '{transition.action_name}' succeeded")
-        transition.complete_transition(state, **kwargs)
-
-
-@shared_task(acks_late=True)
-def run_callbacks_as_task(app_label, model_name, action_name, instance_id, process_name, **kwargs):
-    """It runs all callbacks of provided transition under a single task"""
-    try:
-        app = apps.get_app_config(app_label)
-        model = app.get_model(model_name)
-        instance = model.objects.get(id=instance_id)
-        state = getattr(instance, process_name).state
-        transition = get_transition_from_process(instance, process_name, action_name)
-        logging.info(f"{state.instance_key} callbacks of '{transition.action_name}' started")
-
-        exception = kwargs.get('exception')
-        commands = transition.callbacks.commands if not exception else transition.failure_callbacks.commands
-        callback_kwargs = {} if not exception else {"exception": exception}
-        for callback in commands:
-            callback(instance, **callback_kwargs)
-    except Exception as error:
-        logging.info(f'{app_label}-{model_name}-{action_name}-{instance_id}'
-                     f'callbacks failed with error: {error}')
-        logging.exception(error)
+from django_logic_celery.tasks import run_side_effects_as_task, run_callbacks_as_task, complete_transition, fail_transition
 
 
 class CeleryCommandMixin:
@@ -151,7 +25,8 @@ class CeleryCommandMixin:
             instance_id=state.instance.pk,
             process_name=state.process_name,
             field_name=state.field_name,
-            action_name=self._transition.action_name
+            action_name=self._transition.action_name,
+            tr_id=kwargs.get("tr_id"), 
         )
         
         # Only include serializable kwargs - convert objects to IDs where possible
