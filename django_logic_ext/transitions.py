@@ -1,5 +1,6 @@
 import logging
 from importlib import import_module
+from uuid import UUID
 
 from django.db import transaction, IntegrityError
 from django.utils import timezone
@@ -80,24 +81,35 @@ class MQTransition(Transition):
     def _get_kwargs_without_non_serializable_objects(self, kwargs: dict) -> dict:
         """
         Removes non serializeable objects from kwargs and add user_id for logging in HistoryMixin.
+        Converts UUID objects to strings for JSON serialization.
         TODO: avoid using project specific code inside django_logic_ext
         """
-        from hijack_app.actions import get_actual_user_from_request
+        # from hijack_app.actions import get_actual_user_from_request
 
+        # Make a copy to avoid mutating the original
+        result = {}
+        
         request = kwargs.get('request')
-        if request:
-            del kwargs['request']
-
         user = kwargs.get('user')
-        if user:
-            del kwargs['user']
+        
+        for key, value in kwargs.items():
+            # Skip request and user objects
+            if key in ('request', 'user'):
+                continue
+            
+            # Convert UUID to string
+            if isinstance(value, UUID):
+                result[key] = str(value)
+            else:
+                result[key] = value
 
         if request or user:
-            if request:
-                user = get_actual_user_from_request(request)
-            kwargs['user_id'] = user.id
+            # if request:
+            #     user = get_actual_user_from_request(request)
+            if user:
+                result['user_id'] = user.id
 
-        return kwargs
+        return result
 
     @staticmethod
     def get_instance_lookup(state: State):
@@ -140,6 +152,37 @@ class MQTransition(Transition):
         if not AppConfig.get_setting('ENABLED'):
             super().change_state(state, **kwargs)
             return
+
+        # Lock state first (same as base Transition)
+        from django_logic.logger import logger as transition_logger, TransitionEventType
+        from django_logic.exceptions import TransitionNotAllowed
+        extra = {
+            'event_type': TransitionEventType.START.value,
+            'action_name': self.action_name,
+            'transition': self.action_name,
+            'instance_pk': state.instance.pk,
+        }
+        extra.update(state.get_log_data())
+        extra.update(kwargs)
+        transition_logger.info(
+            f'{kwargs.get("tr_id")} {TransitionEventType.START.value} {self.action_name} {state.instance.pk} {kwargs.get("root_id")} {kwargs.get("parent_id")}',
+            extra=extra
+        )
+        try:
+            if state.is_locked() or not state.lock():
+                raise TransitionNotAllowed("State is locked")
+        except TransitionNotAllowed as e:
+            transition_logger.error(e, extra=kwargs)
+            raise e
+        
+        # Log lock (same as base Transition)
+        transition_logger.info(
+            f'{kwargs.get("tr_id")} Lock',
+            extra={
+                'tr_id': kwargs.get('tr_id'), 
+                'activity': TransitionEventType.LOCK.value, 
+            }
+        )
 
         def _change_state():
             with transaction.atomic():

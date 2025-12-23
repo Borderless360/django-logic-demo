@@ -35,7 +35,7 @@ package-mode = false
 
 [tool.pytest]
 minversion = "9.0"
-addopts = ["-ra", "-q"]
+addopts = ["-ra"]
 testpaths = [
     "abstract/e2e",
     "locker/e2e",
