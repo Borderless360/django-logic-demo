@@ -1,52 +1,10 @@
 import pytest
-import time
 from abstract.models import A, B, C, STATES
-from core.transition import BaseProcess, ProxyTransition as Transition
-from core.logic.side_effects import error_for_superuser
-from core.logic.conditions import is_user, is_superuser
-from abstract.logic.callbacks import save_error
-# from abstract.e2e.utils import wait_for_transition
+from abstract.logic.test_nested_calls import AProcess
+from abstract.e2e.utils import wait_state_unlock
 
 
-def run_b_action(obj, *args, **kwargs):
-    process = BProcess(instance=obj.b)
-    print(f"Running b action with args: {args} and kwargs: {kwargs}")
-    print(f"Process available actions: {process.get_available_actions()}")
-    process.go_to_B(*args, **kwargs)
-
-def run_c_action(obj, *args, **kwargs):
-    process = CProcess(instance=obj.c)
-    process.go_to_B(*args, **kwargs)
-
-class AProcess(BaseProcess):
-    transitions = [
-        Transition('go_to_B', [STATES.A], STATES.B, 
-            side_effects=[run_b_action], 
-            failure_callbacks=[save_error]
-        ),
-    ]
-
-class BProcess(BaseProcess):
-    transitions = [
-        Transition('go_to_B', [STATES.A], STATES.B, 
-            side_effects=[run_c_action], 
-            failure_callbacks=[save_error]
-        ),
-    ]
-
-class CProcess(BaseProcess):
-    transitions = [
-        Transition('go_to_B', [STATES.A], STATES.B, 
-            permissions=[is_user], 
-        ),
-        Transition('go_to_B', [STATES.A], STATES.B, 
-            permissions=[is_superuser], 
-            side_effects=[error_for_superuser], 
-            failure_callbacks=[save_error]
-        ),
-    ]
-
-# @pytest.mark.django_db
+# @pytest.mark.django_db(transaction=True)
 # def test_nested_calls(user):
 #     c = C.objects.create(name='C')
 #     b = B.objects.create(name='B', c=c)
@@ -57,10 +15,8 @@ class CProcess(BaseProcess):
 
 #     process = AProcess(instance=a)
 #     process.go_to_B(user=user)
-#     # Wait for nested transitions to complete (A -> B triggers B -> B triggers C -> B)
-#     # assert wait_for_transition(a, STATES.B, max_retries=25, retry_delay=0.3), "Nested transition did not complete for A"
-#     # assert wait_for_transition(b, STATES.B, max_retries=25, retry_delay=0.3), "Nested transition did not complete for B"
-#     # assert wait_for_transition(c, STATES.B, max_retries=25, retry_delay=0.3), "Nested transition did not complete for C"
+#     assert wait_state_unlock(process.state), "State should be unlocked"
+
 #     a.refresh_from_db()
 #     b.refresh_from_db()
 #     c.refresh_from_db()

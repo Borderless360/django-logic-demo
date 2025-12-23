@@ -11,7 +11,7 @@ class CeleryCommandMixin:
 
     def execute(self, state: State, **kwargs):
         if not self.commands:
-            return super().execute(state)
+            return super().execute(state, **kwargs)
 
         task_kwargs = self.get_task_kwargs(state, **kwargs)
         self.queue_task(task_kwargs)
@@ -29,9 +29,23 @@ class CeleryCommandMixin:
             tr_id=kwargs.get("tr_id"), 
         )
         
+        # Add process_class if available (needed for unbound processes)
+        if 'process_class' in kwargs:
+            task_kwargs['process_class'] = kwargs['process_class']
+        
+        # Task-specific keys that should not be passed to transition methods
+        # These are used for task routing and identification but not for transition logic
+        task_specific_keys = {
+            'app_label', 'model_name', 'instance_id', 'process_name', 
+            'field_name', 'action_name'
+        }
+        
         # Only include serializable kwargs - convert objects to IDs where possible
         serializable_kwargs = {}
         for key, value in kwargs.items():
+            # Skip task-specific keys that are already in task_kwargs
+            if key in task_specific_keys:
+                continue
             if key == 'exception':
                 serializable_kwargs[key] = value
                 continue
@@ -62,7 +76,31 @@ class SideEffectTasks(CeleryCommandMixin, SideEffects):
     """
 
     def queue_task(self, task_kwargs):
-        # Convert function objects to task names (strings)
+        # Check if any command is a regular function (not a Celery task)
+        # Celery task objects have a 'name' attribute, regular functions don't
+        # If we find a regular function, use run_side_effects_as_task which handles them
+        has_regular_function = False
+        for cmd in self.commands:
+            if isinstance(cmd, str):
+                # String task name - assume it's a registered Celery task
+                continue
+            elif hasattr(cmd, 'name'):
+                # Has 'name' attribute - this is a Celery task object
+                continue
+            elif callable(cmd):
+                # Regular callable without 'name' attribute - it's a regular function
+                # We need to use run_side_effects_as_task to execute it
+                has_regular_function = True
+                break
+        
+        # If we have regular functions, use run_side_effects_as_task
+        # run_side_effects_as_task already calls complete_transition/fail_transition internally
+        if has_regular_function:
+            sig = run_side_effects_as_task.signature(kwargs=task_kwargs)
+            transaction.on_commit(sig.delay)
+            return
+        
+        # Convert function objects to task names (strings) for registered Celery tasks
         task_names = []
         for cmd in self.commands:
             if isinstance(cmd, str):
@@ -87,7 +125,43 @@ class CallbacksTasks(CeleryCommandMixin, Callbacks):
     """Callbacks commands executed as a celery group of tasks"""
 
     def queue_task(self, task_kwargs):
-        tasks = [signature(task_name, kwargs=task_kwargs) for task_name in self.commands]
+        # Check if any command is a regular function (not a Celery task)
+        # If we find a regular function, use run_callbacks_as_task which handles them
+        has_regular_function = False
+        for cmd in self.commands:
+            if isinstance(cmd, str):
+                # String task name - assume it's a registered Celery task
+                continue
+            elif hasattr(cmd, 'name'):
+                # Has 'name' attribute - this is a Celery task object
+                continue
+            elif callable(cmd):
+                # Regular callable without 'name' attribute - it's a regular function
+                # We need to use run_callbacks_as_task to execute it
+                has_regular_function = True
+                break
+        
+        # If we have regular functions, use run_callbacks_as_task
+        if has_regular_function:
+            sig = run_callbacks_as_task.signature(kwargs=task_kwargs)
+            transaction.on_commit(sig.delay)
+            return
+        
+        # Convert function objects to task names (strings) for registered Celery tasks
+        task_names = []
+        for cmd in self.commands:
+            if isinstance(cmd, str):
+                task_names.append(cmd)
+            elif hasattr(cmd, 'name'):
+                # Celery task object
+                task_names.append(cmd.name)
+            elif callable(cmd):
+                # Regular function - use its name (assumes it's registered as a Celery task)
+                task_names.append(cmd.__name__)
+            else:
+                task_names.append(str(cmd))
+        
+        tasks = [signature(task_name, kwargs=task_kwargs) for task_name in task_names]
         transaction.on_commit(group(tasks))
 
 
