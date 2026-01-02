@@ -1,7 +1,24 @@
 PROJECT_NAME=django-logic-demo
 
+
 info:
-	echo "Usage: make <target> <args>"
+	@echo "Usage: make <target> <args>"
+	@echo "Targets:"
+	@echo ""
+	@echo "  build : Build the Docker image"
+	@echo "  run   : Run the Docker container"
+	@echo "  stop  : Stop the Docker container"
+	@echo "  down  : Remove the Docker container"
+	@echo "  reset : Remove the Docker container and volume"
+	@echo ""
+	@echo "  manage          : Run a Django management command"
+	@echo "  make_migrations : Make migrations"
+	@echo "  show-sql-migrate: Show SQL migrations"
+	@echo "  migrate         : Apply migrations"
+	@echo ""
+	@echo "  test_locker   : Run locker tests"
+	@echo "  test_abstract : Run abstract tests"
+	@echo "  test          : Run all tests"
 
 build:
 	export DOCKER_BUILDKIT=1 && \

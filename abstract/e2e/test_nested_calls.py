@@ -1,7 +1,8 @@
 import pytest
 from abstract.models import A, B, C, STATES
-from abstract.logic.test_nested_calls import AProcess
+from abstract.logic.test_nested_calls import AProcess, BProcess, CProcess
 from abstract.e2e.utils import wait_state_unlock
+from django_logic.state import State
 
 
 # @pytest.mark.django_db(transaction=True)
@@ -15,7 +16,17 @@ from abstract.e2e.utils import wait_state_unlock
 
 #     process = AProcess(instance=a)
 #     process.go_to_B(user=user)
-#     assert wait_state_unlock(process.state), "State should be unlocked"
+    
+#     # Wait for all nested states to unlock (A, B, and C)
+#     assert wait_state_unlock(process.state), "State A should be unlocked"
+    
+#     # TODO: main process should be unlocked after nested states are unlocked
+#     # The bug is only on async version of django logic
+#     # BAND-AID: Create state objects for B and C to wait for their transitions
+#     b_state = State(instance=b, field_name='status', process_name='process')
+#     c_state = State(instance=c, field_name='status', process_name='process')
+#     assert wait_state_unlock(b_state), "State B should be unlocked"
+#     assert wait_state_unlock(c_state), "State C should be unlocked"
 
 #     a.refresh_from_db()
 #     b.refresh_from_db()
@@ -24,7 +35,7 @@ from abstract.e2e.utils import wait_state_unlock
 #     assert b.status == STATES.B
 #     assert c.status == STATES.B
 
-# @pytest.mark.django_db
+# @pytest.mark.django_db(transaction=True)
 # def test_nested_calls_with_no_permissions(staff_user):
 #     c = C.objects.create(name='C')
 #     b = B.objects.create(name='B', c=c)
@@ -35,9 +46,16 @@ from abstract.e2e.utils import wait_state_unlock
 
 #     process = AProcess(instance=a)
 #     process.go_to_B(user=staff_user)
-#     # Wait for transitions to complete (A -> B, but C stays in A due to permissions)
-#     # assert wait_for_transition(a, STATES.B, max_retries=25, retry_delay=0.3), "Transition did not complete for A"
-#     # time.sleep(1.0)  # Give time for on_commit to fire and error handling
+#     assert wait_state_unlock(process.state), "State A should be unlocked"
+
+#     # TODO: main process should be unlocked after nested states are unlocked
+#     # The bug is only on async version of django logic
+#     # BAND-AID: Create state objects for B and C to wait for their transitions
+#     b_state = State(instance=b, field_name='status', process_name='process')
+#     c_state = State(instance=c, field_name='status', process_name='process')
+#     assert wait_state_unlock(b_state), "State B should be unlocked"
+#     assert wait_state_unlock(c_state), "State C should be unlocked"
+
 #     a.refresh_from_db()
 #     b.refresh_from_db()
 #     c.refresh_from_db()
@@ -48,7 +66,7 @@ from abstract.e2e.utils import wait_state_unlock
 #     assert b.error.startswith("Process class") and staff_user.username in b.error
 #     assert c.error is None
 
-# @pytest.mark.django_db
+# @pytest.mark.django_db(transaction=True)
 # def test_nested_calls_with_error(superuser):
 #     c = C.objects.create(name='C')
 #     b = B.objects.create(name='B', c=c)
@@ -59,9 +77,16 @@ from abstract.e2e.utils import wait_state_unlock
 
 #     process = AProcess(instance=a)
 #     process.go_to_B(user=superuser)
-#     # Wait for transitions and error handling
-#     # assert wait_for_transition(a, STATES.B, max_retries=25, retry_delay=0.3), "Transition did not complete for A"
-#     # time.sleep(1.0)  # Give time for on_commit to fire and error handling
+#     assert wait_state_unlock(process.state), "State A should be unlocked"
+
+#     # TODO: main process should be unlocked after nested states are unlocked
+#     # The bug is only on async version of django logic
+#     # BAND-AID: Create state objects for B and C to wait for their transitions
+#     b_state = State(instance=b, field_name='status', process_name='process')
+#     c_state = State(instance=c, field_name='status', process_name='process')
+#     assert wait_state_unlock(b_state), "State B should be unlocked"
+#     assert wait_state_unlock(c_state), "State C should be unlocked"
+
 #     a.refresh_from_db()
 #     b.refresh_from_db()
 #     c.refresh_from_db()
