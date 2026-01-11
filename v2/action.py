@@ -23,7 +23,7 @@ class TransitionContext(TypedDict):
     kwargs      : dict | None
 
 
-class Transition():
+class Action():
     def __init__(
         self, 
         name              : str, 
@@ -36,7 +36,7 @@ class Transition():
         side_effects      : list[callable] | None, 
         callbacks         : list[callable] | None,
         failure_callbacks : list[callable] | None, 
-        next_transition   : 'Transition' | None
+        next_action: 'Action' | None
     ):
         self.sources           = sources
         self.target            = target
@@ -48,14 +48,12 @@ class Transition():
         self.side_effects      = side_effects
         self.callbacks         = callbacks
         self.failure_callbacks = failure_callbacks
-        self.next_transition   = next_transition
+        self.next_action= next_action
 
-    def is_valid(self, instance: any, user=None) -> bool:
-        for permission in self.permissions:
-            if not permission(instance, user):
-                return False
+    def is_valid(self, instance: any, *args, **kwargs) -> bool:
+        """ Valid is all conditions are met and the state is not locked. """
         for condition in self.conditions:
-            if not condition(instance):
+            if not condition(instance, *args, **kwargs):
                 return False
         locker = CacheLocker(instance, field_name=self.field_name)
         return not locker.is_locked()
