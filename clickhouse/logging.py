@@ -1,7 +1,16 @@
 import logging
 import json
 from datetime import datetime
+from uuid import UUID
 from clickhouse.client import client
+
+
+class UUIDEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles UUID objects."""
+    def default(self, obj):
+        if isinstance(obj, UUID):
+            return str(obj)
+        return super().default(obj)
 
 
 class ClickHouseHandler(logging.Handler):
@@ -49,7 +58,7 @@ class ClickHouseHandler(logging.Handler):
                 self.format_exception(record.exc_info) if record.exc_info else None,
                 str(record.msg) if hasattr(record, 'msg') else None,
                 record.levelno if hasattr(record, 'levelno') else None,
-                json.dumps(record.args) if hasattr(record, 'args') and record.args else None,
+                json.dumps(record.args, cls=UUIDEncoder) if hasattr(record, 'args') and record.args else None,
             ]
             
             # Insert into ClickHouse with explicit column names

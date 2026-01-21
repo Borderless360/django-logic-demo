@@ -33,9 +33,9 @@ dev = [
 [tool.poetry]
 package-mode = false
 
-[tool.pytest]
+[tool.pytest.ini_options]
 minversion = "9.0"
-addopts = ["-ra"]
+addopts = ["-ra", "-p", "celery.contrib.pytest"]
 testpaths = [
     "abstract/e2e",
     "locker/e2e",

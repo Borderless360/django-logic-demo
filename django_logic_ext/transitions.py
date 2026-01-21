@@ -78,6 +78,22 @@ class MQTransition(Transition):
             return super().is_valid(state, user)
         return self.permissions.execute(state, user) and self.conditions.execute(state)
 
+    def _convert_uuids_to_strings(self, obj):
+        """
+        Recursively converts UUID objects to strings for JSON serialization.
+        Handles nested dictionaries, lists, tuples, and sets.
+        """
+        if isinstance(obj, UUID):
+            return str(obj)
+        elif isinstance(obj, dict):
+            return {key: self._convert_uuids_to_strings(value) for key, value in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return type(obj)(self._convert_uuids_to_strings(item) for item in obj)
+        elif isinstance(obj, set):
+            return {self._convert_uuids_to_strings(item) for item in obj}
+        else:
+            return obj
+
     def _get_kwargs_without_non_serializable_objects(self, kwargs: dict) -> dict:
         """
         Removes non serializeable objects from kwargs and add user_id for logging in HistoryMixin.
@@ -97,11 +113,8 @@ class MQTransition(Transition):
             if key in ('request', 'user'):
                 continue
             
-            # Convert UUID to string
-            if isinstance(value, UUID):
-                result[key] = str(value)
-            else:
-                result[key] = value
+            # Convert UUIDs recursively, including nested structures
+            result[key] = self._convert_uuids_to_strings(value)
 
         if request or user:
             # if request:

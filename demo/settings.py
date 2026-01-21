@@ -88,7 +88,7 @@ LOGGING = {
         },
         'file': {
             'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'django-logic.log'),
+            'filename': os.path.join(BASE_DIR, 'django-logic.log'),
             'formatter': 'verbose',
         },
         'clickhouse': {

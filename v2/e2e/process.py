@@ -6,6 +6,19 @@ from abstract.logic.side_effects import run_process_B, fail, save_error_code, fa
 from typing import Final
 from .locker import ModelState
 
+"""
+Action - is a main entity in the process.
+Process - is a group of actions.
+
+Request an action.
+Run action.
+Callbacks after action is done.
+
+For an action we should be able to set place of execution.
+    - for celery it should be a queue name
+
+
+"""
 
 class Order():
     state = 'test'
@@ -35,7 +48,8 @@ class AProcess(OrderStateProcess):
             # Steps(do_something_a)
             # side_effects is steps before state was changed
             # callbacks is steps after state was changed
-        }
+            'runner': CeleryRunner('celery_queue'),
+        },
     }
 
 

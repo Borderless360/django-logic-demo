@@ -1,4 +1,4 @@
 .pytest_cache/
-/logs/*.log
+*.log
 __pycache__/
 *.bkp

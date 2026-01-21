@@ -63,6 +63,7 @@ class SideEffects(BaseCommand):
                     'tr_id': kwargs.get("tr_id"), 
                 })
             self._transition.fail_transition(state, error, **kwargs)
+            raise  # Re-raise the exception to propagate to parent transitions
         else:
             self._transition.complete_transition(state, **kwargs)
 

@@ -8,9 +8,7 @@ from abstract.logic.callbacks import save_error
 class BasicProcess(BaseProcess):
     transitions = [
         Transition(
-            action_name='go_to_B',
-            sources=[STATES.A],
-            target=STATES.B,
+            action_name='go_to_B', sources=[STATES.A], target=STATES.B,
             side_effects=[error_for_superuser],
             failure_callbacks=[save_error],
         ),

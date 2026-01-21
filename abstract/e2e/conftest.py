@@ -4,7 +4,7 @@ from django.core.cache import cache
 from django.conf import settings
 from abstract.e2e.utils import verify_celery_worker_running
 
-pytest_plugins = ["celery.contrib.pytest", "core.fixtures", ]
+pytest_plugins = ["core.fixtures"]
 
 @pytest.fixture(scope='session')
 def django_db_setup():
