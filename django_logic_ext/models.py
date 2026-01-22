@@ -31,3 +31,7 @@ class TransitionMessage(TimeStampedModel):
     def __str__(self):
         return f'{self.app_label}.{self.model_name}(id={self.instance_id}).{self.process_name}.{self.transition_name}'
 
+    def mark_as_completed(self):
+        self.is_completed = True
+        self.save(update_fields=['is_completed'])
+

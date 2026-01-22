@@ -64,7 +64,7 @@ def cleanup_completed_transition_messages() -> None:
                                      is_completed=True).delete()
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=settings.QUEUE_TRANSITION_MAX_RETRIES)
 def execute_side_effects_for_next_one_in_queue(self, queue_key: str):
     """
     Takes transition from provided queue and runs his side effects.

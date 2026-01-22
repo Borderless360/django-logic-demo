@@ -1,3 +1,4 @@
+
 from django.utils.module_loading import import_string
 from django.conf import settings
 from django_logic import Process
@@ -29,7 +30,21 @@ class ProxyTransition(BaseTransition):
         :param kwargs: additional keyword arguments passed to the underlying transition
         """
         transition_class = import_string(settings.TRANSITIONS)
-        self.transition = transition_class(action_name, sources, target, **kwargs)
+
+        sig = inspect.signature(transition_class.__init__)
+        params = list(sig.parameters.keys())
+        # Skip 'self' parameter
+        param_names = [p for p in params if p != 'self']
+
+        # If 'target' is in the positional parameters (after action_name and sources), pass it positionally
+        # Otherwise, don't pass it at all (Action classes handle it internally)
+        if len(param_names) >= 3 and param_names[2] == 'target':
+            # Transition class accepts target as positional argument
+            self.transition = transition_class(action_name, sources, target, **kwargs)
+        else:
+            # Action class - don't pass target, it will be handled internally
+            self.transition = transition_class(action_name, sources, **kwargs)
+
     
     def __getattr__(self, name):
         """

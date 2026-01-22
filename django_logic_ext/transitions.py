@@ -1,10 +1,10 @@
 import logging
 from importlib import import_module
-from uuid import UUID
 
 from django.db import transaction, IntegrityError
 from django.utils import timezone
 from django_logic import Transition, SideEffects, Callbacks
+from django_logic.constants import LogType
 from django_logic.exceptions import TransitionNotAllowed
 from django_logic.state import State
 from django_logic_celery import CeleryTransition, CallbacksSingleTask
@@ -57,6 +57,7 @@ class MQCallbacks(Callbacks):
 
 class MQTransition(Transition):
     """ Transition that implements message queue pattern for django_logic """
+    transition_message: TransitionMessage
 
     def __init__(self, action_name: str, sources: list, target: str, **kwargs):
         # use plain functions for side effects and callbacks
@@ -78,51 +79,27 @@ class MQTransition(Transition):
             return super().is_valid(state, user)
         return self.permissions.execute(state, user) and self.conditions.execute(state)
 
-    def _convert_uuids_to_strings(self, obj):
-        """
-        Recursively converts UUID objects to strings for JSON serialization.
-        Handles nested dictionaries, lists, tuples, and sets.
-        """
-        if isinstance(obj, UUID):
-            return str(obj)
-        elif isinstance(obj, dict):
-            return {key: self._convert_uuids_to_strings(value) for key, value in obj.items()}
-        elif isinstance(obj, (list, tuple)):
-            return type(obj)(self._convert_uuids_to_strings(item) for item in obj)
-        elif isinstance(obj, set):
-            return {self._convert_uuids_to_strings(item) for item in obj}
-        else:
-            return obj
-
     def _get_kwargs_without_non_serializable_objects(self, kwargs: dict) -> dict:
         """
         Removes non serializeable objects from kwargs and add user_id for logging in HistoryMixin.
-        Converts UUID objects to strings for JSON serialization.
         TODO: avoid using project specific code inside django_logic_ext
         """
-        # from hijack_app.actions import get_actual_user_from_request
+        from hijack_app.actions import get_actual_user_from_request
 
-        # Make a copy to avoid mutating the original
-        result = {}
-        
         request = kwargs.get('request')
+        if request:
+            del kwargs['request']
+
         user = kwargs.get('user')
-        
-        for key, value in kwargs.items():
-            # Skip request and user objects
-            if key in ('request', 'user'):
-                continue
-            
-            # Convert UUIDs recursively, including nested structures
-            result[key] = self._convert_uuids_to_strings(value)
+        if user:
+            del kwargs['user']
 
         if request or user:
-            # if request:
-            #     user = get_actual_user_from_request(request)
-            if user:
-                result['user_id'] = user.id
+            if request:
+                user = get_actual_user_from_request(request)
+            kwargs['user_id'] = user.id
 
-        return result
+        return kwargs
 
     @staticmethod
     def get_instance_lookup(state: State):
@@ -138,13 +115,13 @@ class MQTransition(Transition):
         instance_lookup = self.get_instance_lookup(state)
         kwargs = self._get_kwargs_without_non_serializable_objects(kwargs)
 
-        TransitionMessage.objects.create(
+        self.transition_message = TransitionMessage.objects.create(
             **instance_lookup,
             transition_name=self.action_name,
             kwargs=kwargs
         )
 
-    def complete_transition_message_with_errors(self, state: State, **kwargs) -> int:
+    def mark_transition_message_with_errors_as_completed(self, state: State, **kwargs) -> int:
         """ Marks uncompleted TransitionMessage instance with errors as completed """
         instance_lookup = self.get_instance_lookup(state)
 
@@ -166,37 +143,6 @@ class MQTransition(Transition):
             super().change_state(state, **kwargs)
             return
 
-        # Lock state first (same as base Transition)
-        from django_logic.logger import logger as transition_logger, TransitionEventType
-        from django_logic.exceptions import TransitionNotAllowed
-        extra = {
-            'event_type': TransitionEventType.START.value,
-            'action_name': self.action_name,
-            'transition': self.action_name,
-            'instance_pk': state.instance.pk,
-        }
-        extra.update(state.get_log_data())
-        extra.update(kwargs)
-        transition_logger.info(
-            f'{kwargs.get("tr_id")} {TransitionEventType.START.value} {self.action_name} {state.instance.pk} {kwargs.get("root_id")} {kwargs.get("parent_id")}',
-            extra=extra
-        )
-        try:
-            if state.is_locked() or not state.lock():
-                raise TransitionNotAllowed("State is locked")
-        except TransitionNotAllowed as e:
-            transition_logger.error(e, extra=kwargs)
-            raise e
-        
-        # Log lock (same as base Transition)
-        transition_logger.info(
-            f'{kwargs.get("tr_id")} Lock',
-            extra={
-                'tr_id': kwargs.get('tr_id'), 
-                'activity': TransitionEventType.LOCK.value, 
-            }
-        )
-
         def _change_state():
             with transaction.atomic():
                 self.set_in_progress_state(state)
@@ -211,7 +157,7 @@ class MQTransition(Transition):
             _change_state()
         except IntegrityError:
             # try to complete existed message with max number of errors
-            if not self.complete_transition_message_with_errors(state, **kwargs):
+            if not self.mark_transition_message_with_errors_as_completed(state, **kwargs):
                 raise TransitionNotAllowed('Instance already is in progress.')
 
             # then try to create new message again
@@ -221,6 +167,23 @@ class MQTransition(Transition):
                 _handle_unkown_error(e)
         except Exception as e:
             _handle_unkown_error(e)
+
+    def complete_transition(self, state: State, **kwargs):
+        if not AppConfig.get_setting('ENABLED'):
+            super().complete_transition(state, **kwargs)
+            return
+
+        state.set_state(self.target)
+        self.transition_message.mark_as_completed()
+
+        log_data = state.get_log_data()
+        log_data.update({'user': kwargs.get('user', None)})
+        self.logger.info(f'{state.instance_key} state changed to {self.target}',
+                         log_type=LogType.TRANSITION_COMPLETED,
+                         log_data=log_data)
+
+        self.callbacks.execute(state, **kwargs)
+        self.next_transition.execute(state, **kwargs)
 
     def fail_transition(self, state: State, exception: Exception, **kwargs):
         """ Handles transition failure but still raises exception """
@@ -250,7 +213,11 @@ class MQAction(MQTransition):
 
     def complete_transition(self, state: State, **kwargs):
         """ Only apply callbacks, do not change state """
+        if AppConfig.get_setting('ENABLED'):
+            self.transition_message.mark_as_completed()
+
         self.callbacks.execute(state, **kwargs)
+        self.next_transition.execute(state, **kwargs)
 
     def fail_transition(self, state: State, exception: Exception, **kwargs):
         """ Apply failure callbacks and raise exception """
