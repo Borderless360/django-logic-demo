@@ -1,6 +1,6 @@
-from django_logic.constants import LogType
-from django_logic.logger import get_logger, transition_logger as logger
+from django_logic.logger import transition_logger as logger, TransitionEventType
 from django_logic.state import State
+
 
 
 class BaseCommand(object):
@@ -10,8 +10,6 @@ class BaseCommand(object):
     def __init__(self, commands=None, transition=None):
         self._commands = commands or []
         self._transition = transition
-        # DEPRECATED
-        self.logger = get_logger(module_name=__name__)
 
     @property
     def commands(self):
@@ -47,21 +45,22 @@ class SideEffects(BaseCommand):
     def execute(self, state: State, **kwargs):
         """Side-effects execution"""
         try:
+            logger.info(
+                f'{kwargs.get("tr_id")} SideEffects {len(self._commands)}',
+                extra={ 'tr_id': kwargs.get("tr_id"), }
+            )
             for command in self._commands:
                 logger.info(
                     f'{kwargs.get("tr_id")} SideEffect {command.__name__}',
                     extra={
                         'tr_id': kwargs.get("tr_id"), 
-                        'activity': 'SideEffect', 
+                        'activity': TransitionEventType.SIDE_EFFECT.value, 
                         'side_effect': command.__name__,
                     }
                 )
                 command(state.instance, **kwargs)
         except Exception as error:
-            logger.error(error,
-                extra={
-                    'tr_id': kwargs.get("tr_id"), 
-                })
+            logger.error(error, extra={'tr_id': kwargs.get("tr_id") })
             self._transition.fail_transition(state, error, **kwargs)
             raise  # Re-raise the exception to propagate to parent transitions
         else:
@@ -77,30 +76,31 @@ class Callbacks(BaseCommand):
         Please note, it doesn't run failure callbacks in case of exception.
         """
         try:
+            logger.info(
+                f'{kwargs.get("tr_id")} Callbacks {len(self._commands)}',
+                extra={ 'tr_id': kwargs.get("tr_id"), }
+            )
             for command in self.commands:
+                logger.info(
+                    f'{kwargs.get("tr_id")} Callback {command.__name__}',
+                    extra={
+                        'tr_id': kwargs.get("tr_id"), 
+                        'activity': TransitionEventType.CALLBACK.value, 
+                        'callback': command.__name__,
+                    }
+                )
                 command(state.instance, **kwargs)
         except Exception as error:
-            # DEPRECATED
-            self.logger.info(f"{state.instance_key} callbacks of '{self._transition.action_name}` failed with {error}",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=state.get_log_data())
-            self.logger.error(error, log_type=LogType.TRANSITION_ERROR, log_data=state.get_log_data())
-
-            logger.info(f"{state.instance_key} callbacks of '{self._transition.action_name}` failed with {error}",
-                extra={
-                    # 'log_type': LogType.TRANSITION_DEBUG,
-                    'log_data': state.get_log_data()
-                })
-            logger.error(error,
-            extra={
-                # 'log_type': LogType.TRANSITION_ERROR,
-                'log_data': state.get_log_data()
-            })
+            logger.error(error, extra={'tr_id': kwargs.get("tr_id") })
+            # ignore any errors in callbacks
 
 
 class NextTransition(object):
     """
     Runs next transition if it is specified
+    Note: we cannot use side-effect or callback to run next transition,
+    because the next transition should be executed after state is unlocked in the same thread.
+    Callbacks can be executed in another thread.
     """
     _next_transition: str
 

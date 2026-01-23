@@ -70,7 +70,7 @@ def execute_side_effects_for_next_one_in_queue(self, queue_key: str):
     Takes transition from provided queue and runs his side effects.
     In the end calls itself with delay to process next transition in queue.
     """
-    from django_logic.constants import LogType
+    # from django_logic.constants import LogType
     from history_app.django_logic_logger import DjangoLogicClickhouseLogger
     model_history_logger = DjangoLogicClickhouseLogger()
 
@@ -110,13 +110,13 @@ def execute_side_effects_for_next_one_in_queue(self, queue_key: str):
     transitions = list(process.get_available_transitions(action_name=action_name))
     if not transitions:
         model_history_logger.info(f'execute_side_effects_for_next_one_in_queue: no available transitions, value: {value}',
-                                  log_type=LogType.TRANSITION_DEBUG,
+                                #   log_type=LogType.TRANSITION_DEBUG,
                                   log_data=log_data)
         qt_helper.remove_from_tmp(serialized_value)
         self.retry(countdown=0)
     transition = transitions[0]
     model_history_logger.info(f"{state.instance_key} side effects of '{action_name}' started",
-                              log_type=LogType.TRANSITION_DEBUG,
+                            #   log_type=LogType.TRANSITION_DEBUG,
                               log_data=log_data)
 
     try:
@@ -124,30 +124,30 @@ def execute_side_effects_for_next_one_in_queue(self, queue_key: str):
             side_effect(instance, **kwargs)
     except Exception as error:
         model_history_logger.info(f"{state.instance_key} side effects of '{transition.action_name}' failed with error: {error}",
-                                  log_type=LogType.TRANSITION_DEBUG,
+                                #   log_type=LogType.TRANSITION_DEBUG,
                                   log_data=log_data)
         model_history_logger.error(error,
-                                   log_type=LogType.TRANSITION_ERROR,
+                                #    log_type=LogType.TRANSITION_ERROR,
                                    log_data=log_data)
 
         try:
             transition.fail_transition(state, error, **kwargs)
         except Exception as e:
             model_history_logger.info(f'execute_side_effects_for_next_one_in_queue fail_transition failed: {str(e)}',
-                                      log_type=LogType.TRANSITION_DEBUG,
+                                    #   log_type=LogType.TRANSITION_DEBUG,
                                       log_data=log_data)
             qt_helper.remove_from_tmp(serialized_value)
             self.retry(countdown=0)
     else:
         model_history_logger.info(f"{state.instance_key} side effects of '{transition.action_name}' succeeded",
-                                  log_type=LogType.TRANSITION_DEBUG,
+                                #   log_type=LogType.TRANSITION_DEBUG,
                                   log_data=log_data)
 
         try:
             transition.complete_transition(state, **kwargs)
         except Exception as e:
             model_history_logger.info(f'execute_side_effects_for_next_one_in_queue complete_transition failed: {str(e)}',
-                                      log_type=LogType.TRANSITION_DEBUG,
+                                    #   log_type=LogType.TRANSITION_DEBUG,
                                       log_data=log_data)
             qt_helper.remove_from_tmp(serialized_value)
             self.retry(countdown=0)

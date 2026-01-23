@@ -3,9 +3,8 @@ import warnings
 from functools import partial
 
 from django_logic.commands import Conditions, Permissions
-from django_logic.constants import LogType
 from django_logic.exceptions import TransitionNotAllowed
-from django_logic.logger import get_logger, logger
+from django_logic.logger import logger
 from django_logic.state import State
 
 
@@ -48,8 +47,6 @@ class Process(object):
                                           process_name=self.process_name)
         else:
             raise AttributeError('Process class requires either state field name and instance or state object')
-        # DEPRECATED
-        self.logger = get_logger(module_name=__name__)
 
     def __getattr__(self, item):
         return partial(self._get_transition_method, item)
@@ -87,7 +84,7 @@ class Process(object):
                     return transition.change_state(self.state, **kwargs)
                 except Exception:
                     # Exception already handled by fail_transition, just swallow it at the top level
-                    return
+                    return tr_id
             else:
                 return transition.change_state(self.state, **kwargs)
 

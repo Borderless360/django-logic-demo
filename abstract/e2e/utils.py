@@ -60,6 +60,56 @@ def check_logs(transition_id: str, event_type: TransitionEventType, max_retries:
     return False
 
 
+def get_logs_by_tr_id(tr_id, max_retries: int = 5, retry_delay: float = 0.1, as_dict: bool = False):
+    """
+    Get all logs for a given transition ID from ClickHouse.
+    
+    Includes retry logic to handle potential async writes to ClickHouse.
+    
+    :param tr_id: The transition ID to search for (can be UUID or string)
+    :param max_retries: Maximum number of retry attempts
+    :param retry_delay: Delay between retries in seconds
+    :param as_dict: If True, return list of dictionaries with column names as keys. 
+                    If False, return list of tuples (default).
+    :return: List of log records (tuples or dictionaries depending on as_dict parameter)
+    """
+    # Convert UUID to string if needed
+    tr_id_str = str(tr_id)
+    # Escape single quotes in the tr_id for SQL safety
+    tr_id_escaped = tr_id_str.replace("'", "''")
+    query = f"""
+        SELECT *
+        FROM logs
+        WHERE message LIKE '{tr_id_escaped} %'
+        ORDER BY _timestamp ASC, created ASC, message ASC
+    """
+    
+    for attempt in range(max_retries):
+        try:
+            result = client.query(query)
+            # Return all result rows
+            if result.result_rows:
+                if as_dict:
+                    # Get column names from result
+                    column_names = result.column_names
+                    # Convert each row tuple to a dictionary
+                    return [dict(zip(column_names, row)) for row in result.result_rows]
+                else:
+                    return result.result_rows
+            
+            # If not found and not last attempt, wait and retry
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+        except Exception as e:
+            # If error occurs and not last attempt, wait and retry
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+            else:
+                raise
+    
+    return []
+
+
 def verify_celery_worker_running(celery_app, max_retries: int = 5, retry_delay: float = 0.1) -> bool:
     """
     Verify that the Celery worker is actually running by executing a test task.

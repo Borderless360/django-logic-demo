@@ -4,7 +4,6 @@ from importlib import import_module
 from django.db import transaction, IntegrityError
 from django.utils import timezone
 from django_logic import Transition, SideEffects, Callbacks
-from django_logic.constants import LogType
 from django_logic.exceptions import TransitionNotAllowed
 from django_logic.state import State
 from django_logic_celery import CeleryTransition, CallbacksSingleTask
@@ -179,7 +178,7 @@ class MQTransition(Transition):
         log_data = state.get_log_data()
         log_data.update({'user': kwargs.get('user', None)})
         self.logger.info(f'{state.instance_key} state changed to {self.target}',
-                         log_type=LogType.TRANSITION_COMPLETED,
+                        #  log_type=LogType.TRANSITION_COMPLETED,
                          log_data=log_data)
 
         self.callbacks.execute(state, **kwargs)
