@@ -1,6 +1,6 @@
 from abc import ABC
 
-from django_logic.commands import SideEffects, Callbacks, Permissions, Conditions, NextTransition
+from django_logic.commands import SideEffects, Callbacks, FailureSideEffects, Permissions, Conditions, NextTransition
 from django_logic.exceptions import TransitionNotAllowed
 from django_logic.logger import transition_logger as logger, TransitionEventType
 from django_logic.state import State
@@ -13,6 +13,7 @@ class BaseTransition(ABC):
     side_effects_class = SideEffects
     callbacks_class = Callbacks
     failure_callbacks_class = Callbacks
+    failure_side_effects_class = FailureSideEffects
     permissions_class = Permissions
     conditions_class = Conditions
     next_transition_class = NextTransition
@@ -54,6 +55,7 @@ class Transition(BaseTransition):
         :param failed_state: a state which will be set to, if the side-effects raise an exception
         :param side_effects: a list of functions which will be run one before it changes to the target state
         :param failure_callbacks: a list of functions which will be run if any of side-effects raise an exception
+        :param failure_side_effects: a list of functions which will be run after side-effects fail, before unlock
         :param callbacks: a list of functions which will be run after the target state changed
         :param permissions: a list of functions with accepted user instance which
          define permissions of the transition
@@ -65,6 +67,7 @@ class Transition(BaseTransition):
         self.in_progress_state = kwargs.get('in_progress_state')
         self.failed_state = kwargs.get('failed_state')
         self.failure_callbacks = self.failure_callbacks_class(kwargs.get('failure_callbacks', []), transition=self)
+        self.failure_side_effects = self.failure_side_effects_class(kwargs.get('failure_side_effects', []), transition=self)
         self.side_effects = self.side_effects_class(kwargs.get('side_effects', []), transition=self)
         self.callbacks = self.callbacks_class(kwargs.get('callbacks', []), transition=self)
         self.permissions = self.permissions_class(kwargs.get('permissions', []), transition=self)
@@ -156,6 +159,8 @@ class Transition(BaseTransition):
         if self.failed_state:
             state.set_state(self.failed_state)
             self._log_set_state(self.failed_state, kwargs)
+
+        self.failure_side_effects.execute(state, exception=exception, **kwargs)
 
         state.unlock()
         self._log_unlock(kwargs)

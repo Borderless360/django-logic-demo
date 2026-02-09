@@ -41,12 +41,13 @@ def test_basic_transition_with_error(superuser):
     assert a.error == 'Error for superuser'
 
     logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    # assert len(logs) == 7, "Should be 7 logs"
+    assert len(logs) == 9, "Should be 9 logs"
     assert logs[0]['message'] == f'{tr_id} Start BasicProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}'
     assert logs[1]['message'] == f'{tr_id} Lock'
     assert logs[2]['message'] == f'{tr_id} SideEffects 1'
     assert logs[3]['message'] == f'{tr_id} SideEffect error_for_superuser'
-    # callbacks before unlock are failure_callbacks
-    assert logs[4]['message'] == f'{tr_id} Callbacks 1'
-    assert logs[5]['message'] == f'{tr_id} Callback save_error'
-    assert logs[6]['message'] == f'{tr_id} Unlock'
+    assert logs[4]['message'] == f'{tr_id} Error for superuser'
+    assert logs[5]['message'] == f'{tr_id} FailureSideEffects 1'
+    assert logs[6]['message'] == f'{tr_id} FailureSideEffect save_error'
+    assert logs[7]['message'] == f'{tr_id} Unlock'
+    assert logs[8]['message'] == f'{tr_id} Callbacks 0'

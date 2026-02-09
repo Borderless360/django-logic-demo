@@ -60,7 +60,7 @@ class SideEffects(BaseCommand):
                 )
                 command(state.instance, **kwargs)
         except Exception as error:
-            logger.error(error, extra={'tr_id': kwargs.get("tr_id") })
+            logger.error(f'{kwargs.get("tr_id")} {error}', extra={'tr_id': kwargs.get("tr_id") })
             self._transition.fail_transition(state, error, **kwargs)
             raise  # Re-raise the exception to propagate to parent transitions
         else:
@@ -93,6 +93,33 @@ class Callbacks(BaseCommand):
         except Exception as error:
             logger.error(error, extra={'tr_id': kwargs.get("tr_id") })
             # ignore any errors in callbacks
+
+
+class FailureSideEffects(BaseCommand):
+    def execute(self, state: State, **kwargs):
+        """
+        Failure side-effects execution method.
+        Runs after side-effects fail and before the state is unlocked.
+        If any command raises an exception it will stop execution and log the error.
+        """
+        try:
+            logger.info(
+                f'{kwargs.get("tr_id")} FailureSideEffects {len(self._commands)}',
+                extra={ 'tr_id': kwargs.get("tr_id"), }
+            )
+            for command in self.commands:
+                logger.info(
+                    f'{kwargs.get("tr_id")} FailureSideEffect {command.__name__}',
+                    extra={
+                        'tr_id': kwargs.get("tr_id"),
+                        'activity': TransitionEventType.FAILURE_SIDE_EFFECT.value,
+                        'failure_side_effect': command.__name__,
+                    }
+                )
+                command(state.instance, **kwargs)
+        except Exception as error:
+            logger.error(error, extra={'tr_id': kwargs.get("tr_id") })
+            # ignore any errors in failure side effects
 
 
 class NextTransition(object):

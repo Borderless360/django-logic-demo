@@ -10,6 +10,6 @@ class BasicProcess(BaseProcess):
         Transition(
             action_name='go_to_B', sources=[STATES.A], target=STATES.B,
             side_effects=[error_for_superuser],
-            failure_callbacks=[save_error],
+            failure_side_effects=[save_error],
         ),
     ]
