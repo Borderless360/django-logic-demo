@@ -83,7 +83,8 @@ class Process(object):
                 try:
                     return transition.change_state(self.state, **kwargs)
                 except Exception:
-                    # Exception already handled by fail_transition, just swallow it at the top level
+                    # Do not re-raise the exception, just return the tr_id
+                    # We need this for backward compatibility with the old code for now
                     return tr_id
             else:
                 return transition.change_state(self.state, **kwargs)

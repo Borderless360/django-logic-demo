@@ -34,7 +34,10 @@ def test_basic_transition_with_error(superuser):
     """ Test for basic transition with error """
     a = A.objects.create(name='A')
     process = BasicProcess(instance=a)
-    tr_id = process.go_to_B(user=superuser) # should raise an error for superuser
+    tr_id = process.go_to_B(user=superuser)
+    # with pytest.raises(Exception) as exc_info:
+    #     process.go_to_B(user=superuser)  # should raise an error for superuser
+    # tr_id = exc_info.value.tr_id
 
     assert wait_state_unlock(process.state), "State should be unlocked"
     a.refresh_from_db()
@@ -62,6 +65,9 @@ def test_recovery_after_failure(user, superuser):
 
     # First attempt: superuser triggers an error, state stays A
     tr_id_fail = process.go_to_B(user=superuser)
+    # with pytest.raises(Exception) as exc_info:
+    #     process.go_to_B(user=superuser)
+    # tr_id_fail = exc_info.value.tr_id
     assert wait_state_unlock(process.state), "State should be unlocked after failure"
     a.refresh_from_db()
     assert a.status == STATES.A
@@ -99,6 +105,9 @@ def test_transition_without_user():
     a = A.objects.create(name='A')
     process = BasicProcess(instance=a)
     tr_id = process.go_to_B(user=None)
+    # with pytest.raises(Exception) as exc_info:
+    #     process.go_to_B(user=None)
+    # tr_id = exc_info.value.tr_id
 
     assert wait_state_unlock(process.state), "State should be unlocked after failure"
     a.refresh_from_db()

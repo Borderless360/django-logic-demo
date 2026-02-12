@@ -1,4 +1,5 @@
 import pytest
+from django_logic.exceptions import TransitionNotAllowed
 from abstract.models import A, B, C, STATES
 from abstract.logic.test_nested_calls import AProcess, BProcess, CProcess
 from abstract.e2e.utils import wait_state_unlock, get_nested_tr_ids, get_all_logs_by_root_id
@@ -85,6 +86,9 @@ def test_nested_calls_with_no_permissions(staff_user):
     a = A.objects.create(name='A', b=b)
     process = AProcess(instance=a)
     tr_id = process.go_to_B(user=staff_user)
+    # with pytest.raises(TransitionNotAllowed) as exc_info:
+    #     process.go_to_B(user=staff_user)
+    # tr_id = exc_info.value.tr_id
 
     # State A should be unloacked after B and C 
     assert wait_state_unlock(process.state), "State A should be unlocked"
@@ -151,6 +155,9 @@ def test_nested_calls_with_error(superuser):
     a = A.objects.create(name='A', b=b)
     process = AProcess(instance=a)
     tr_id = process.go_to_B(user=superuser)
+    # with pytest.raises(Exception) as exc_info:
+    #     process.go_to_B(user=superuser)
+    # tr_id = exc_info.value.tr_id
 
     assert wait_state_unlock(process.state), "State A should be unlocked"
     a.refresh_from_db()
@@ -227,6 +234,9 @@ def test_nested_calls_recovery_after_error(superuser, user):
 
     # First attempt: superuser triggers error, all stay at A
     tr_id_fail = process.go_to_B(user=superuser)
+    # with pytest.raises(Exception) as exc_info:
+    #     process.go_to_B(user=superuser)
+    # tr_id_fail = exc_info.value.tr_id
     assert wait_state_unlock(process.state), "State A should be unlocked after failure"
     a.refresh_from_db()
     b.refresh_from_db()
@@ -333,6 +343,9 @@ def test_nested_calls_recovery_after_permission_failure(staff_user, user):
 
     # First attempt: staff_user has no permissions at CProcess, all stay at A
     tr_id_fail = process.go_to_B(user=staff_user)
+    # with pytest.raises(Exception) as exc_info:
+    #     process.go_to_B(user=staff_user)
+    # tr_id_fail = exc_info.value.tr_id
     assert wait_state_unlock(process.state), "State A should be unlocked after permission failure"
     a.refresh_from_db()
     b.refresh_from_db()
@@ -423,6 +436,9 @@ def test_nested_calls_missing_b_link(user):
     a = A.objects.create(name='A')  # no B linked
     process = AProcess(instance=a)
     tr_id = process.go_to_B(user=user)
+    # with pytest.raises(Exception) as exc_info:
+    #     process.go_to_B(user=user)
+    # tr_id = exc_info.value.tr_id
 
     assert wait_state_unlock(process.state), "State A should be unlocked after error"
     a.refresh_from_db()
@@ -456,6 +472,9 @@ def test_nested_calls_missing_c_link(user):
     a = A.objects.create(name='A', b=b)
     process = AProcess(instance=a)
     tr_id = process.go_to_B(user=user)
+    # with pytest.raises(Exception) as exc_info:
+    #     process.go_to_B(user=user)
+    # tr_id = exc_info.value.tr_id
 
     assert wait_state_unlock(process.state), "State A should be unlocked after error"
     a.refresh_from_db()

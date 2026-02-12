@@ -47,6 +47,7 @@ test_locker:
 test_abstract:
 	make manage s=demo c=test_abstract
 test:
+	make migrate
 	docker compose -p $(PROJECT_NAME) exec demo pytest
 test-one:
 	docker compose -p $(PROJECT_NAME) exec demo pytest abstract/e2e/test_nested_calls.py::test_nested_calls
