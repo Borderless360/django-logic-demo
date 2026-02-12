@@ -45,22 +45,14 @@ class SideEffects(BaseCommand):
     def execute(self, state: State, **kwargs):
         """Side-effects execution"""
         try:
-            logger.info(
-                f'{kwargs.get("tr_id")} SideEffects {len(self._commands)}',
-                extra={ 'tr_id': kwargs.get("tr_id"), }
-            )
+            logger.info(f'{kwargs.get("tr_id")} SideEffects {len(self._commands)}')
             for command in self._commands:
                 logger.info(
-                    f'{kwargs.get("tr_id")} SideEffect {command.__name__}',
-                    extra={
-                        'tr_id': kwargs.get("tr_id"), 
-                        'activity': TransitionEventType.SIDE_EFFECT.value, 
-                        'side_effect': command.__name__,
-                    }
+                    f'{kwargs.get("tr_id")} {TransitionEventType.SIDE_EFFECT.value} {command.__name__}'
                 )
                 command(state.instance, **kwargs)
         except Exception as error:
-            logger.error(f'{kwargs.get("tr_id")} {error}', extra={'tr_id': kwargs.get("tr_id") })
+            logger.error(f'{kwargs.get("tr_id")} {error}')
             self._transition.fail_transition(state, error, **kwargs)
             raise  # Re-raise the exception to propagate to parent transitions
         else:
@@ -76,22 +68,14 @@ class Callbacks(BaseCommand):
         Please note, it doesn't run failure callbacks in case of exception.
         """
         try:
-            logger.info(
-                f'{kwargs.get("tr_id")} Callbacks {len(self._commands)}',
-                extra={ 'tr_id': kwargs.get("tr_id"), }
-            )
+            logger.info(f'{kwargs.get("tr_id")} Callbacks {len(self._commands)}')
             for command in self.commands:
                 logger.info(
-                    f'{kwargs.get("tr_id")} Callback {command.__name__}',
-                    extra={
-                        'tr_id': kwargs.get("tr_id"), 
-                        'activity': TransitionEventType.CALLBACK.value, 
-                        'callback': command.__name__,
-                    }
+                    f'{kwargs.get("tr_id")} {TransitionEventType.CALLBACK.value} {command.__name__}'
                 )
                 command(state.instance, **kwargs)
         except Exception as error:
-            logger.error(error, extra={'tr_id': kwargs.get("tr_id") })
+            logger.error(error)
             # ignore any errors in callbacks
 
 
@@ -103,22 +87,14 @@ class FailureSideEffects(BaseCommand):
         If any command raises an exception it will stop execution and log the error.
         """
         try:
-            logger.info(
-                f'{kwargs.get("tr_id")} FailureSideEffects {len(self._commands)}',
-                extra={ 'tr_id': kwargs.get("tr_id"), }
-            )
+            logger.info(f'{kwargs.get("tr_id")} FailureSideEffects {len(self._commands)}')
             for command in self.commands:
                 logger.info(
-                    f'{kwargs.get("tr_id")} FailureSideEffect {command.__name__}',
-                    extra={
-                        'tr_id': kwargs.get("tr_id"),
-                        'activity': TransitionEventType.FAILURE_SIDE_EFFECT.value,
-                        'failure_side_effect': command.__name__,
-                    }
+                    f'{kwargs.get("tr_id")} {TransitionEventType.FAILURE_SIDE_EFFECT.value} {command.__name__}'
                 )
                 command(state.instance, **kwargs)
         except Exception as error:
-            logger.error(error, extra={'tr_id': kwargs.get("tr_id") })
+            logger.error(error)
             # ignore any errors in failure side effects
 
 

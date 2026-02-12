@@ -4,6 +4,7 @@ from abstract.e2e.utils import wait_state_unlock
 from abstract.logic.test_basic import BasicProcess
 from abstract.e2e.utils import get_logs_by_tr_id
 from django_logic.exceptions import TransitionNotAllowed
+from django_logic.logger import TransitionEventType
 
 
 @pytest.mark.django_db(transaction=True)
@@ -11,7 +12,7 @@ def test_happy_path(user):
     """ Happy path test for basic transition """
     a = A.objects.create(name='A')
     process = BasicProcess(instance=a)
-    tr_id = process.go_to_B(user=user)
+    tr_id = process.go_to_B(user=user, message='test')  # message is not used, we just test ignoring unexpected kwargs
 
     assert tr_id is not None
     assert wait_state_unlock(process.state), "State should be unlocked"
@@ -20,12 +21,12 @@ def test_happy_path(user):
 
     logs = get_logs_by_tr_id(tr_id, as_dict=True)
     assert len(logs) == 7, "Should be 7 logs"
-    assert logs[0]['message'] == f'{tr_id} Start BasicProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
+    assert logs[0]['message'] == f'{tr_id} {TransitionEventType.START.value} BasicProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}'
+    assert logs[1]['message'] == f'{tr_id} {TransitionEventType.LOCK.value}'
     assert logs[2]['message'] == f'{tr_id} SideEffects 1'
-    assert logs[3]['message'] == f'{tr_id} SideEffect error_for_superuser'
-    assert logs[4]['message'] == f'{tr_id} Set State B'
-    assert logs[5]['message'] == f'{tr_id} Unlock'
+    assert logs[3]['message'] == f'{tr_id} {TransitionEventType.SIDE_EFFECT.value} error_for_superuser'
+    assert logs[4]['message'] == f'{tr_id} {TransitionEventType.SET_STATE.value} B'
+    assert logs[5]['message'] == f'{tr_id} {TransitionEventType.UNLOCK.value}'
     assert logs[6]['message'] == f'{tr_id} Callbacks 0'
 
 
@@ -34,7 +35,7 @@ def test_basic_transition_with_error(superuser):
     """ Test for basic transition with error """
     a = A.objects.create(name='A')
     process = BasicProcess(instance=a)
-    tr_id = process.go_to_B(user=superuser)
+    tr_id = process.go_to_B(user=superuser) 
     # with pytest.raises(Exception) as exc_info:
     #     process.go_to_B(user=superuser)  # should raise an error for superuser
     # tr_id = exc_info.value.tr_id
@@ -45,7 +46,7 @@ def test_basic_transition_with_error(superuser):
     assert a.error == 'Error for superuser'
 
     logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    assert len(logs) == 9, "Should be 9 logs"
+    assert len(logs) == 10, "Should be 10 logs"
     assert logs[0]['message'] == f'{tr_id} Start BasicProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}'
     assert logs[1]['message'] == f'{tr_id} Lock'
     assert logs[2]['message'] == f'{tr_id} SideEffects 1'
@@ -55,6 +56,7 @@ def test_basic_transition_with_error(superuser):
     assert logs[6]['message'] == f'{tr_id} FailureSideEffect save_error'
     assert logs[7]['message'] == f'{tr_id} Unlock'
     assert logs[8]['message'] == f'{tr_id} Callbacks 0'
+    assert logs[9]['message'].startswith(f'{tr_id} {TransitionEventType.FAIL.value}: Exception: Error for superuser')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -114,7 +116,7 @@ def test_transition_without_user():
     assert a.status == STATES.A, "State should remain A after error"
 
     logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    assert len(logs) == 9, "Should be 9 logs (same as error path)"
+    assert len(logs) == 10, "Should be 10 logs (same as error path)"
     assert logs[4]['message'] == f'{tr_id} User is required'
     assert logs[5]['message'] == f'{tr_id} FailureSideEffects 1'
     assert logs[6]['message'] == f'{tr_id} FailureSideEffect save_error'

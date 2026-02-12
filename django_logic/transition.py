@@ -2,7 +2,7 @@ from abc import ABC
 
 from django_logic.commands import SideEffects, Callbacks, FailureSideEffects, Permissions, Conditions, NextTransition
 from django_logic.exceptions import TransitionNotAllowed
-from django_logic.logger import transition_logger as logger, TransitionEventType
+from django_logic.logger import transition_logger, TransitionEventType
 from django_logic.state import State
 
 
@@ -100,29 +100,18 @@ class Transition(BaseTransition):
         or `fail_transition` in case of failure.
         :param state: State object
         """
-        extra = {
-            'event_type': TransitionEventType.START.value,
-            'action_name': self.action_name,
-            'transition': self.action_name,
-            'instance_pk': state.instance.pk,
-        }
-        extra.update(state.get_log_data())
-        extra.update(kwargs)
         # Extract process class name from full module path
         process_class = kwargs.get('process_class', '')
         process_class_name = process_class.split('.')[-1] if process_class else ''
-        logger.info(
-            f'{kwargs.get("tr_id")} {TransitionEventType.START.value} {process_class_name} {self.action_name} {state.instance_key} {kwargs.get("root_id")} {kwargs.get("parent_id")}',
-            extra=extra
+        transition_logger.info(
+            f'{kwargs.get("tr_id")} {TransitionEventType.START.value} {process_class_name} '
+            f'{self.action_name} {state.instance_key} {kwargs.get("root_id")} {kwargs.get("parent_id")}'
         )
-        try:
-            if state.is_locked() or not state.lock():
-                raise TransitionNotAllowed("State is locked")
-        except TransitionNotAllowed as e:
-            logger.error(e, extra=kwargs)
-            raise e
-        else:
-            self._log_lock(kwargs)
+
+        if state.is_locked() or not state.lock():
+            raise TransitionNotAllowed("State is locked")
+
+        self._log_lock(kwargs)
 
         if self.in_progress_state:
             state.set_state(self.in_progress_state)
@@ -167,32 +156,13 @@ class Transition(BaseTransition):
         self.failure_callbacks.execute(state, exception=exception, **kwargs)
     
     def _log_set_state(self, state: str, kwargs: dict):
-        logger.info(
-            f'{kwargs.get("tr_id")} Set State {state}',
-            extra={
-                'tr_id': kwargs.get('tr_id'), 
-                'activity': TransitionEventType.SET_STATE.value, 
-                'state': state,
-            }
-        )
+        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.SET_STATE.value} {state}')
 
     def _log_lock(self, kwargs: dict):
-        logger.info(
-            f'{kwargs.get("tr_id")} Lock',
-            extra={
-                'tr_id': kwargs.get('tr_id'), 
-                'activity': TransitionEventType.LOCK.value, 
-            }
-        )
+        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.LOCK.value}')
 
     def _log_unlock(self, kwargs: dict):
-        logger.info(
-            f'{kwargs.get("tr_id")} Unlock',
-            extra={
-                'tr_id': kwargs.get('tr_id'), 
-                'activity': TransitionEventType.UNLOCK.value, 
-            }
-        )
+        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.UNLOCK.value}')
 
     @staticmethod
     def _init_transition_context(kwargs: dict) -> None:

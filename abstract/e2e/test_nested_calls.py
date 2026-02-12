@@ -1,5 +1,5 @@
 import pytest
-from django_logic.exceptions import TransitionNotAllowed
+from django_logic.logger import TransitionEventType
 from abstract.models import A, B, C, STATES
 from abstract.logic.test_nested_calls import AProcess, BProcess, CProcess
 from abstract.e2e.utils import wait_state_unlock, get_nested_tr_ids, get_all_logs_by_root_id
@@ -107,7 +107,7 @@ def test_nested_calls_with_no_permissions(staff_user):
     # Get all logs across AProcess and BProcess in execution order
     # CProcess never starts (no matching transition for staff_user)
     logs = get_all_logs_by_root_id(tr_id, expected_count=18, as_dict=True)
-    assert len(logs) == 18, f"Should be 18 logs total (A:9 + B:9, C never starts), got {len(logs)}"
+    assert len(logs) == 19, f"Should be 19 logs total (A:9 + B:9, C never starts), got {len(logs)}"
 
     # Extract nested tr_id (only BProcess, CProcess never started)
     nested_tr_ids = get_nested_tr_ids(tr_id, expected_count=1)
@@ -173,7 +173,7 @@ def test_nested_calls_with_error(superuser):
 
     # Get all logs across AProcess, BProcess, and CProcess in execution order
     logs = get_all_logs_by_root_id(tr_id, expected_count=27, as_dict=True)
-    assert len(logs) == 27, f"Should be 27 logs total (A:9 + B:9 + C:9), got {len(logs)}"
+    assert len(logs) == 28, f"Should be 27 logs total (A:9 + B:9 + C:9), got {len(logs)}"
 
     # Extract nested tr_ids
     nested_tr_ids = get_nested_tr_ids(tr_id, expected_count=2)
@@ -248,7 +248,7 @@ def test_nested_calls_recovery_after_error(superuser, user):
 
     # Check failed attempt: all 3 processes fail (A:9 + B:9 + C:9 = 27)
     fail_logs = get_all_logs_by_root_id(tr_id_fail, expected_count=27, as_dict=True)
-    assert len(fail_logs) == 27, f"Should be 27 logs for failed attempt, got {len(fail_logs)}"
+    assert len(fail_logs) == 28, f"Should be 28 logs for failed attempt, got {len(fail_logs)}"
 
     fail_nested = get_nested_tr_ids(tr_id_fail, expected_count=2)
     b_tr_fail = fail_nested[0]
@@ -283,6 +283,7 @@ def test_nested_calls_recovery_after_error(superuser, user):
     assert fail_logs[24]['message'] == f'{tr_id_fail} Unlock'
     assert fail_logs[25]['message'] == f'{tr_id_fail} Callbacks 1'
     assert fail_logs[26]['message'] == f'{tr_id_fail} Callback save_error'
+    assert fail_logs[27]['message'].startswith(f'{tr_id_fail} {TransitionEventType.FAIL.value}: Exception: Error for superuser')
 
     # Second attempt: regular user succeeds, all move to B
     process = AProcess(instance=a)
@@ -356,7 +357,7 @@ def test_nested_calls_recovery_after_permission_failure(staff_user, user):
 
     # Check failed attempt: A and B fail, C never starts (A:9 + B:9 = 18)
     fail_logs = get_all_logs_by_root_id(tr_id_fail, expected_count=18, as_dict=True)
-    assert len(fail_logs) == 18, f"Should be 18 logs for failed attempt, got {len(fail_logs)}"
+    assert len(fail_logs) == 19, f"Should be 19 logs for failed attempt, got {len(fail_logs)}"
 
     fail_nested = get_nested_tr_ids(tr_id_fail, expected_count=1)
     assert len(fail_nested) == 1, "Should have 1 nested transition ID (BProcess only)"
@@ -447,7 +448,7 @@ def test_nested_calls_missing_b_link(user):
 
     # Only AProcess logs (no nested processes started, run_b_action fails on obj.b)
     logs = get_all_logs_by_root_id(tr_id, expected_count=9, as_dict=True)
-    assert len(logs) == 9, f"Should be 9 logs (A only, no nested), got {len(logs)}"
+    assert len(logs) == 10, f"Should be 10 logs (A only, no nested), got {len(logs)}"
 
     assert logs[0]['message'] == f'{tr_id} Start AProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}'
     assert logs[1]['message'] == f'{tr_id} Lock'
@@ -486,7 +487,7 @@ def test_nested_calls_missing_c_link(user):
 
     # A and B fail, C never starts (A:9 + B:9 = 18)
     logs = get_all_logs_by_root_id(tr_id, expected_count=18, as_dict=True)
-    assert len(logs) == 18, f"Should be 18 logs total (A:9 + B:9, C never starts), got {len(logs)}"
+    assert len(logs) == 19, f"Should be 19 logs total (A:9 + B:9, C never starts), got {len(logs)}"
 
     # Extract nested tr_id (only BProcess, CProcess never started)
     nested_tr_ids = get_nested_tr_ids(tr_id, expected_count=1)
