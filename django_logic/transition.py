@@ -1,4 +1,5 @@
 from abc import ABC
+from uuid import UUID
 
 from django_logic.constants import LogType
 from django_logic.commands import SideEffects, Callbacks, FailureSideEffects, Permissions, Conditions, NextTransition
@@ -95,7 +96,7 @@ class Transition(BaseTransition):
                 self.permissions.execute(state, user) and
                 self.conditions.execute(state))
 
-    def change_state(self, state: State, **kwargs):
+    def change_state(self, state: State, **kwargs) -> UUID | None:
         """
         This method changes the state by the following algorithm:
         - Lock state
@@ -140,7 +141,7 @@ class Transition(BaseTransition):
         self._init_transition_context(kwargs)
         self.side_effects.execute(state, **kwargs)
 
-        return kwargs.get('tr_id')
+        return kwargs.get('tr_id', None)
 
     def complete_transition(self, state: State, **kwargs):
         """
@@ -232,12 +233,13 @@ class Action(Transition):
     def __str__(self):
         return f"Action: {self.action_name}"
 
-    def change_state(self, state: State, **kwargs):
+    def change_state(self, state: State, **kwargs) -> UUID | None:
         """
         it run side effects which should run `complete_transition` in case of success
         or `fail_transition` in case of failure.
         :param state: State object
         """
+        # TODO: UUID for actions?
         self._init_transition_context(kwargs)
         self.side_effects.execute(state, **kwargs)
 

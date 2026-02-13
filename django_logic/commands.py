@@ -93,6 +93,12 @@ class Callbacks(BaseCommand):
                 )
                 command(state.instance, **kwargs)
         except Exception as error:
+            # DEPRECATED
+            self.logger.info(f"{state.instance_key} callbacks of '{self._transition.action_name}` failed with {error}",
+                             log_type=LogType.TRANSITION_DEBUG,
+                             log_data=state.get_log_data())
+            self.logger.error(error, log_type=LogType.TRANSITION_ERROR, log_data=state.get_log_data())
+
             logger.error(error)
             # ignore any errors in callbacks
 
@@ -112,12 +118,6 @@ class FailureSideEffects(BaseCommand):
                 )
                 command(state.instance, **kwargs)
         except Exception as error:
-            # DEPRECATED
-            self.logger.info(f"{state.instance_key} callbacks of '{self._transition.action_name}` failed with {error}",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=state.get_log_data())
-            self.logger.error(error, log_type=LogType.TRANSITION_ERROR, log_data=state.get_log_data())
-
             logger.error(error)
             # ignore any errors in failure side effects
 
@@ -145,4 +145,9 @@ class NextTransition(object):
             return None
 
         transition = transitions[0]
-        transition.change_state(state, **kwargs)
+        try:
+            return transition.change_state(state, **kwargs)
+        except Exception as error:
+            # Ignore any errors in the next transition, 
+            # it should not impact the main transition execution
+            logger.error(error)
