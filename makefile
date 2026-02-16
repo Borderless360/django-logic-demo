@@ -50,4 +50,5 @@ test:
 	make migrate
 	docker compose -p $(PROJECT_NAME) exec demo pytest
 test-one:
-	docker compose -p $(PROJECT_NAME) exec demo pytest abstract/e2e/test_basic.py::test_happy_path
+	make migrate
+	docker compose -p $(PROJECT_NAME) exec demo pytest $(t) 

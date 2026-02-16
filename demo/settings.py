@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'locker',
     'invoice',
     'clickhouse',
+    'django_logic',
     'django_logic_ext',
 ]
 MIDDLEWARE = [
