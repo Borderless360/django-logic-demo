@@ -2,7 +2,7 @@ import pytest
 from django_logic.logger import TransitionEventType
 from abstract.models import A, B, C, STATES
 from abstract.logic.test_nested_calls import AProcess, BProcess, CProcess
-from abstract.e2e.utils import wait_state_unlock, get_nested_tr_ids, get_all_logs_by_root_id
+from abstract.e2e.utils import wait_state_unlock, get_nested_tr_ids, get_all_logs_by_root_id, LogChecker
 
 
 @pytest.mark.django_db(transaction=True)
@@ -32,41 +32,38 @@ def test_nested_calls_happy_path(user):
     assert c.status == STATES.B
 
     # Get all logs across AProcess, BProcess, and CProcess in execution order
-    logs = get_all_logs_by_root_id(tr_id, expected_count=20, as_dict=True)
-    assert len(logs) == 20, f"Should be 20 logs total (A:7 + B:7 + C:6), got {len(logs)}"
-
-    # Extract nested tr_ids from Start messages
-    nested_tr_ids = get_nested_tr_ids(tr_id, expected_count=2)
-    b_tr_id = nested_tr_ids[0]
-    c_tr_id = nested_tr_ids[1]
+    nested_tr_ids_list = get_nested_tr_ids(tr_id, expected_count=2)
+    b_tr_id = nested_tr_ids_list[0]
+    c_tr_id = nested_tr_ids_list[1]
     b_process = BProcess(instance=b)
     c_process = CProcess(instance=c)
+    logs = LogChecker(get_all_logs_by_root_id(tr_id, as_dict=True))
 
     # Full interleaved execution sequence: A starts -> B starts -> C completes -> B completes -> A completes
-    assert logs[0]['message'] == f'{tr_id} Start AProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 1'
-    assert logs[3]['message'] == f'{tr_id} SideEffect run_b_action'
+    logs.check(f'{tr_id} Start AProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} Lock')
+    logs.check(f'{tr_id} SideEffects 1')
+    logs.check(f'{tr_id} SideEffect run_b_action')
     # BProcess starts inside AProcess's run_b_action side effect
-    assert logs[4]['message'] == f'{b_tr_id} Start AProcess go_to_B {b_process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[5]['message'] == f'{b_tr_id} Lock'
-    assert logs[6]['message'] == f'{b_tr_id} SideEffects 1'
-    assert logs[7]['message'] == f'{b_tr_id} SideEffect run_c_action'
+    logs.check(f'{b_tr_id} Start AProcess go_to_B {b_process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{b_tr_id} Lock')
+    logs.check(f'{b_tr_id} SideEffects 1')
+    logs.check(f'{b_tr_id} SideEffect run_c_action')
     # CProcess starts inside BProcess's run_c_action side effect
-    assert logs[8]['message'] == f'{c_tr_id} Start AProcess go_to_B {c_process.state.instance_key} {tr_id} {b_tr_id}'
-    assert logs[9]['message'] == f'{c_tr_id} Lock'
-    assert logs[10]['message'] == f'{c_tr_id} SideEffects 0'
-    assert logs[11]['message'] == f'{c_tr_id} Set State B'
-    assert logs[12]['message'] == f'{c_tr_id} Unlock'
-    assert logs[13]['message'] == f'{c_tr_id} Callbacks 0'
+    logs.check(f'{c_tr_id} Start AProcess go_to_B {c_process.state.instance_key} {tr_id} {b_tr_id}')
+    logs.check(f'{c_tr_id} Lock')
+    logs.check(f'{c_tr_id} SideEffects 0')
+    logs.check(f'{c_tr_id} Set State B')
+    logs.check(f'{c_tr_id} Unlock')
+    logs.check(f'{c_tr_id} Callbacks 0')
     # CProcess done, BProcess completes
-    assert logs[14]['message'] == f'{b_tr_id} Set State B'
-    assert logs[15]['message'] == f'{b_tr_id} Unlock'
-    assert logs[16]['message'] == f'{b_tr_id} Callbacks 0'
+    logs.check(f'{b_tr_id} Set State B')
+    logs.check(f'{b_tr_id} Unlock')
+    logs.check(f'{b_tr_id} Callbacks 0')
     # BProcess done, AProcess completes
-    assert logs[17]['message'] == f'{tr_id} Set State B'
-    assert logs[18]['message'] == f'{tr_id} Unlock'
-    assert logs[19]['message'] == f'{tr_id} Callbacks 0'
+    logs.check(f'{tr_id} Set State B')
+    logs.check(f'{tr_id} Unlock')
+    logs.check(f'{tr_id} Callbacks 0')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -106,37 +103,34 @@ def test_nested_calls_with_no_permissions(staff_user):
 
     # Get all logs across AProcess and BProcess in execution order
     # CProcess never starts (no matching transition for staff_user)
-    logs = get_all_logs_by_root_id(tr_id, expected_count=18, as_dict=True)
-    assert len(logs) == 19, f"Should be 19 logs total (A:9 + B:9, C never starts), got {len(logs)}"
-
-    # Extract nested tr_id (only BProcess, CProcess never started)
-    nested_tr_ids = get_nested_tr_ids(tr_id, expected_count=1)
-    assert len(nested_tr_ids) == 1, "Should have 1 nested transition ID (BProcess only)"
-    b_tr_id = nested_tr_ids[0]
+    nested_tr_ids_list = get_nested_tr_ids(tr_id, expected_count=1)
+    assert len(nested_tr_ids_list) == 1, "Should have 1 nested transition ID (BProcess only)"
+    b_tr_id = nested_tr_ids_list[0]
     b_process = BProcess(instance=b)
+    logs = LogChecker(get_all_logs_by_root_id(tr_id, as_dict=True))
 
     # Full interleaved sequence: A starts -> B starts -> C permission denied -> B fails -> A fails
-    assert logs[0]['message'] == f'{tr_id} Start AProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 1'
-    assert logs[3]['message'] == f'{tr_id} SideEffect run_b_action'
+    logs.check(f'{tr_id} Start AProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} Lock')
+    logs.check(f'{tr_id} SideEffects 1')
+    logs.check(f'{tr_id} SideEffect run_b_action')
     # BProcess starts inside AProcess's run_b_action side effect
-    assert logs[4]['message'] == f'{b_tr_id} Start AProcess go_to_B {b_process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[5]['message'] == f'{b_tr_id} Lock'
-    assert logs[6]['message'] == f'{b_tr_id} SideEffects 1'
-    assert logs[7]['message'] == f'{b_tr_id} SideEffect run_c_action'
+    logs.check(f'{b_tr_id} Start AProcess go_to_B {b_process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{b_tr_id} Lock')
+    logs.check(f'{b_tr_id} SideEffects 1')
+    logs.check(f'{b_tr_id} SideEffect run_c_action')
     # CProcess has no matching transition for staff_user -> TransitionNotAllowed
-    assert logs[8]['message'].startswith(f'{b_tr_id} Process class') and staff_user.username in logs[8]['message']
-    assert logs[9]['message'] == f'{b_tr_id} FailureSideEffects 0'
-    assert logs[10]['message'] == f'{b_tr_id} Unlock'
-    assert logs[11]['message'] == f'{b_tr_id} Callbacks 1'
-    assert logs[12]['message'] == f'{b_tr_id} Callback save_error'
+    logs.check(f'{b_tr_id} Process class')
+    logs.check(f'{b_tr_id} FailureSideEffects 0')
+    logs.check(f'{b_tr_id} Unlock')
+    logs.check(f'{b_tr_id} Callbacks 1')
+    logs.check(f'{b_tr_id} Callback save_error')
     # BProcess error propagates to AProcess
-    assert logs[13]['message'].startswith(f'{tr_id} Process class') and staff_user.username in logs[13]['message']
-    assert logs[14]['message'] == f'{tr_id} FailureSideEffects 0'
-    assert logs[15]['message'] == f'{tr_id} Unlock'
-    assert logs[16]['message'] == f'{tr_id} Callbacks 1'
-    assert logs[17]['message'] == f'{tr_id} Callback save_error'
+    logs.check(f'{tr_id} Process class')
+    logs.check(f'{tr_id} FailureSideEffects 0')
+    logs.check(f'{tr_id} Unlock')
+    logs.check(f'{tr_id} Callbacks 1')
+    logs.check(f'{tr_id} Callback save_error')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -172,48 +166,45 @@ def test_nested_calls_with_error(superuser):
     assert c.error == 'Error for superuser'
 
     # Get all logs across AProcess, BProcess, and CProcess in execution order
-    logs = get_all_logs_by_root_id(tr_id, expected_count=27, as_dict=True)
-    assert len(logs) == 28, f"Should be 27 logs total (A:9 + B:9 + C:9), got {len(logs)}"
-
-    # Extract nested tr_ids
-    nested_tr_ids = get_nested_tr_ids(tr_id, expected_count=2)
-    b_tr_id = nested_tr_ids[0]
-    c_tr_id = nested_tr_ids[1]
+    nested_tr_ids_list = get_nested_tr_ids(tr_id, expected_count=2)
+    b_tr_id = nested_tr_ids_list[0]
+    c_tr_id = nested_tr_ids_list[1]
     b_process = BProcess(instance=b)
     c_process = CProcess(instance=c)
+    logs = LogChecker(get_all_logs_by_root_id(tr_id, as_dict=True))
 
     # Full interleaved sequence: A starts -> B starts -> C fails -> B fails -> A fails
-    assert logs[0]['message'] == f'{tr_id} Start AProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 1'
-    assert logs[3]['message'] == f'{tr_id} SideEffect run_b_action'
+    logs.check(f'{tr_id} Start AProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} Lock')
+    logs.check(f'{tr_id} SideEffects 1')
+    logs.check(f'{tr_id} SideEffect run_b_action')
     # BProcess starts inside AProcess's run_b_action side effect
-    assert logs[4]['message'] == f'{b_tr_id} Start AProcess go_to_B {b_process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[5]['message'] == f'{b_tr_id} Lock'
-    assert logs[6]['message'] == f'{b_tr_id} SideEffects 1'
-    assert logs[7]['message'] == f'{b_tr_id} SideEffect run_c_action'
+    logs.check(f'{b_tr_id} Start AProcess go_to_B {b_process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{b_tr_id} Lock')
+    logs.check(f'{b_tr_id} SideEffects 1')
+    logs.check(f'{b_tr_id} SideEffect run_c_action')
     # CProcess starts inside BProcess's run_c_action side effect (superuser matches is_superuser)
-    assert logs[8]['message'] == f'{c_tr_id} Start AProcess go_to_B {c_process.state.instance_key} {tr_id} {b_tr_id}'
-    assert logs[9]['message'] == f'{c_tr_id} Lock'
-    assert logs[10]['message'] == f'{c_tr_id} SideEffects 1'
-    assert logs[11]['message'] == f'{c_tr_id} SideEffect error_for_superuser'
-    assert logs[12]['message'] == f'{c_tr_id} Error for superuser'
-    assert logs[13]['message'] == f'{c_tr_id} FailureSideEffects 0'
-    assert logs[14]['message'] == f'{c_tr_id} Unlock'
-    assert logs[15]['message'] == f'{c_tr_id} Callbacks 1'
-    assert logs[16]['message'] == f'{c_tr_id} Callback save_error'
+    logs.check(f'{c_tr_id} Start AProcess go_to_B {c_process.state.instance_key} {tr_id} {b_tr_id}')
+    logs.check(f'{c_tr_id} Lock')
+    logs.check(f'{c_tr_id} SideEffects 1')
+    logs.check(f'{c_tr_id} SideEffect error_for_superuser')
+    logs.check(f'{c_tr_id} Error for superuser')
+    logs.check(f'{c_tr_id} FailureSideEffects 0')
+    logs.check(f'{c_tr_id} Unlock')
+    logs.check(f'{c_tr_id} Callbacks 1')
+    logs.check(f'{c_tr_id} Callback save_error')
     # CProcess error propagates to BProcess
-    assert logs[17]['message'] == f'{b_tr_id} Error for superuser'
-    assert logs[18]['message'] == f'{b_tr_id} FailureSideEffects 0'
-    assert logs[19]['message'] == f'{b_tr_id} Unlock'
-    assert logs[20]['message'] == f'{b_tr_id} Callbacks 1'
-    assert logs[21]['message'] == f'{b_tr_id} Callback save_error'
+    logs.check(f'{b_tr_id} Error for superuser')
+    logs.check(f'{b_tr_id} FailureSideEffects 0')
+    logs.check(f'{b_tr_id} Unlock')
+    logs.check(f'{b_tr_id} Callbacks 1')
+    logs.check(f'{b_tr_id} Callback save_error')
     # BProcess error propagates to AProcess
-    assert logs[22]['message'] == f'{tr_id} Error for superuser'
-    assert logs[23]['message'] == f'{tr_id} FailureSideEffects 0'
-    assert logs[24]['message'] == f'{tr_id} Unlock'
-    assert logs[25]['message'] == f'{tr_id} Callbacks 1'
-    assert logs[26]['message'] == f'{tr_id} Callback save_error'
+    logs.check(f'{tr_id} Error for superuser')
+    logs.check(f'{tr_id} FailureSideEffects 0')
+    logs.check(f'{tr_id} Unlock')
+    logs.check(f'{tr_id} Callbacks 1')
+    logs.check(f'{tr_id} Callback save_error')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -247,43 +238,41 @@ def test_nested_calls_recovery_after_error(superuser, user):
     assert a.error == 'Error for superuser'
 
     # Check failed attempt: all 3 processes fail (A:9 + B:9 + C:9 = 27)
-    fail_logs = get_all_logs_by_root_id(tr_id_fail, expected_count=27, as_dict=True)
-    assert len(fail_logs) == 28, f"Should be 28 logs for failed attempt, got {len(fail_logs)}"
-
     fail_nested = get_nested_tr_ids(tr_id_fail, expected_count=2)
     b_tr_fail = fail_nested[0]
     c_tr_fail = fail_nested[1]
     b_process = BProcess(instance=b)
     c_process = CProcess(instance=c)
+    fail_logs = LogChecker(get_all_logs_by_root_id(tr_id_fail, as_dict=True))
 
-    assert fail_logs[0]['message'] == f'{tr_id_fail} Start AProcess go_to_B {process.state.instance_key} {tr_id_fail} {tr_id_fail}'
-    assert fail_logs[1]['message'] == f'{tr_id_fail} Lock'
-    assert fail_logs[2]['message'] == f'{tr_id_fail} SideEffects 1'
-    assert fail_logs[3]['message'] == f'{tr_id_fail} SideEffect run_b_action'
-    assert fail_logs[4]['message'] == f'{b_tr_fail} Start AProcess go_to_B {b_process.state.instance_key} {tr_id_fail} {tr_id_fail}'
-    assert fail_logs[5]['message'] == f'{b_tr_fail} Lock'
-    assert fail_logs[6]['message'] == f'{b_tr_fail} SideEffects 1'
-    assert fail_logs[7]['message'] == f'{b_tr_fail} SideEffect run_c_action'
-    assert fail_logs[8]['message'] == f'{c_tr_fail} Start AProcess go_to_B {c_process.state.instance_key} {tr_id_fail} {b_tr_fail}'
-    assert fail_logs[9]['message'] == f'{c_tr_fail} Lock'
-    assert fail_logs[10]['message'] == f'{c_tr_fail} SideEffects 1'
-    assert fail_logs[11]['message'] == f'{c_tr_fail} SideEffect error_for_superuser'
-    assert fail_logs[12]['message'] == f'{c_tr_fail} Error for superuser'
-    assert fail_logs[13]['message'] == f'{c_tr_fail} FailureSideEffects 0'
-    assert fail_logs[14]['message'] == f'{c_tr_fail} Unlock'
-    assert fail_logs[15]['message'] == f'{c_tr_fail} Callbacks 1'
-    assert fail_logs[16]['message'] == f'{c_tr_fail} Callback save_error'
-    assert fail_logs[17]['message'] == f'{b_tr_fail} Error for superuser'
-    assert fail_logs[18]['message'] == f'{b_tr_fail} FailureSideEffects 0'
-    assert fail_logs[19]['message'] == f'{b_tr_fail} Unlock'
-    assert fail_logs[20]['message'] == f'{b_tr_fail} Callbacks 1'
-    assert fail_logs[21]['message'] == f'{b_tr_fail} Callback save_error'
-    assert fail_logs[22]['message'] == f'{tr_id_fail} Error for superuser'
-    assert fail_logs[23]['message'] == f'{tr_id_fail} FailureSideEffects 0'
-    assert fail_logs[24]['message'] == f'{tr_id_fail} Unlock'
-    assert fail_logs[25]['message'] == f'{tr_id_fail} Callbacks 1'
-    assert fail_logs[26]['message'] == f'{tr_id_fail} Callback save_error'
-    assert fail_logs[27]['message'].startswith(f'{tr_id_fail} {TransitionEventType.FAIL.value}: Exception: Error for superuser')
+    fail_logs.check(f'{tr_id_fail} Start AProcess go_to_B {process.state.instance_key} {tr_id_fail} {tr_id_fail}')
+    fail_logs.check(f'{tr_id_fail} Lock')
+    fail_logs.check(f'{tr_id_fail} SideEffects 1')
+    fail_logs.check(f'{tr_id_fail} SideEffect run_b_action')
+    fail_logs.check(f'{b_tr_fail} Start AProcess go_to_B {b_process.state.instance_key} {tr_id_fail} {tr_id_fail}')
+    fail_logs.check(f'{b_tr_fail} Lock')
+    fail_logs.check(f'{b_tr_fail} SideEffects 1')
+    fail_logs.check(f'{b_tr_fail} SideEffect run_c_action')
+    fail_logs.check(f'{c_tr_fail} Start AProcess go_to_B {c_process.state.instance_key} {tr_id_fail} {b_tr_fail}')
+    fail_logs.check(f'{c_tr_fail} Lock')
+    fail_logs.check(f'{c_tr_fail} SideEffects 1')
+    fail_logs.check(f'{c_tr_fail} SideEffect error_for_superuser')
+    fail_logs.check(f'{c_tr_fail} Error for superuser')
+    fail_logs.check(f'{c_tr_fail} FailureSideEffects 0')
+    fail_logs.check(f'{c_tr_fail} Unlock')
+    fail_logs.check(f'{c_tr_fail} Callbacks 1')
+    fail_logs.check(f'{c_tr_fail} Callback save_error')
+    fail_logs.check(f'{b_tr_fail} Error for superuser')
+    fail_logs.check(f'{b_tr_fail} FailureSideEffects 0')
+    fail_logs.check(f'{b_tr_fail} Unlock')
+    fail_logs.check(f'{b_tr_fail} Callbacks 1')
+    fail_logs.check(f'{b_tr_fail} Callback save_error')
+    fail_logs.check(f'{tr_id_fail} Error for superuser')
+    fail_logs.check(f'{tr_id_fail} FailureSideEffects 0')
+    fail_logs.check(f'{tr_id_fail} Unlock')
+    fail_logs.check(f'{tr_id_fail} Callbacks 1')
+    fail_logs.check(f'{tr_id_fail} Callback save_error')
+    fail_logs.check(f'{tr_id_fail} {TransitionEventType.FAIL.value}: Exception: Error for superuser')
 
     # Second attempt: regular user succeeds, all move to B
     process = AProcess(instance=a)
@@ -298,33 +287,31 @@ def test_nested_calls_recovery_after_error(superuser, user):
     assert c.status == STATES.B
 
     # Check successful attempt: all 3 processes succeed (A:7 + B:7 + C:6 = 20)
-    ok_logs = get_all_logs_by_root_id(tr_id_ok, expected_count=20, as_dict=True)
-    assert len(ok_logs) == 20, f"Should be 20 logs for successful attempt, got {len(ok_logs)}"
-
     ok_nested = get_nested_tr_ids(tr_id_ok, expected_count=2)
     b_tr_ok = ok_nested[0]
     c_tr_ok = ok_nested[1]
+    ok_logs = LogChecker(get_all_logs_by_root_id(tr_id_ok, as_dict=True))
 
-    assert ok_logs[0]['message'] == f'{tr_id_ok} Start AProcess go_to_B {process.state.instance_key} {tr_id_ok} {tr_id_ok}'
-    assert ok_logs[1]['message'] == f'{tr_id_ok} Lock'
-    assert ok_logs[2]['message'] == f'{tr_id_ok} SideEffects 1'
-    assert ok_logs[3]['message'] == f'{tr_id_ok} SideEffect run_b_action'
-    assert ok_logs[4]['message'] == f'{b_tr_ok} Start AProcess go_to_B {b_process.state.instance_key} {tr_id_ok} {tr_id_ok}'
-    assert ok_logs[5]['message'] == f'{b_tr_ok} Lock'
-    assert ok_logs[6]['message'] == f'{b_tr_ok} SideEffects 1'
-    assert ok_logs[7]['message'] == f'{b_tr_ok} SideEffect run_c_action'
-    assert ok_logs[8]['message'] == f'{c_tr_ok} Start AProcess go_to_B {c_process.state.instance_key} {tr_id_ok} {b_tr_ok}'
-    assert ok_logs[9]['message'] == f'{c_tr_ok} Lock'
-    assert ok_logs[10]['message'] == f'{c_tr_ok} SideEffects 0'
-    assert ok_logs[11]['message'] == f'{c_tr_ok} Set State B'
-    assert ok_logs[12]['message'] == f'{c_tr_ok} Unlock'
-    assert ok_logs[13]['message'] == f'{c_tr_ok} Callbacks 0'
-    assert ok_logs[14]['message'] == f'{b_tr_ok} Set State B'
-    assert ok_logs[15]['message'] == f'{b_tr_ok} Unlock'
-    assert ok_logs[16]['message'] == f'{b_tr_ok} Callbacks 0'
-    assert ok_logs[17]['message'] == f'{tr_id_ok} Set State B'
-    assert ok_logs[18]['message'] == f'{tr_id_ok} Unlock'
-    assert ok_logs[19]['message'] == f'{tr_id_ok} Callbacks 0'
+    ok_logs.check(f'{tr_id_ok} Start AProcess go_to_B {process.state.instance_key} {tr_id_ok} {tr_id_ok}')
+    ok_logs.check(f'{tr_id_ok} Lock')
+    ok_logs.check(f'{tr_id_ok} SideEffects 1')
+    ok_logs.check(f'{tr_id_ok} SideEffect run_b_action')
+    ok_logs.check(f'{b_tr_ok} Start AProcess go_to_B {b_process.state.instance_key} {tr_id_ok} {tr_id_ok}')
+    ok_logs.check(f'{b_tr_ok} Lock')
+    ok_logs.check(f'{b_tr_ok} SideEffects 1')
+    ok_logs.check(f'{b_tr_ok} SideEffect run_c_action')
+    ok_logs.check(f'{c_tr_ok} Start AProcess go_to_B {c_process.state.instance_key} {tr_id_ok} {b_tr_ok}')
+    ok_logs.check(f'{c_tr_ok} Lock')
+    ok_logs.check(f'{c_tr_ok} SideEffects 0')
+    ok_logs.check(f'{c_tr_ok} Set State B')
+    ok_logs.check(f'{c_tr_ok} Unlock')
+    ok_logs.check(f'{c_tr_ok} Callbacks 0')
+    ok_logs.check(f'{b_tr_ok} Set State B')
+    ok_logs.check(f'{b_tr_ok} Unlock')
+    ok_logs.check(f'{b_tr_ok} Callbacks 0')
+    ok_logs.check(f'{tr_id_ok} Set State B')
+    ok_logs.check(f'{tr_id_ok} Unlock')
+    ok_logs.check(f'{tr_id_ok} Callbacks 0')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -356,32 +343,30 @@ def test_nested_calls_recovery_after_permission_failure(staff_user, user):
     assert c.status == STATES.A
 
     # Check failed attempt: A and B fail, C never starts (A:9 + B:9 = 18)
-    fail_logs = get_all_logs_by_root_id(tr_id_fail, expected_count=18, as_dict=True)
-    assert len(fail_logs) == 19, f"Should be 19 logs for failed attempt, got {len(fail_logs)}"
-
     fail_nested = get_nested_tr_ids(tr_id_fail, expected_count=1)
     assert len(fail_nested) == 1, "Should have 1 nested transition ID (BProcess only)"
     b_tr_fail = fail_nested[0]
     b_process = BProcess(instance=b)
+    fail_logs = LogChecker(get_all_logs_by_root_id(tr_id_fail, as_dict=True))
 
-    assert fail_logs[0]['message'] == f'{tr_id_fail} Start AProcess go_to_B {process.state.instance_key} {tr_id_fail} {tr_id_fail}'
-    assert fail_logs[1]['message'] == f'{tr_id_fail} Lock'
-    assert fail_logs[2]['message'] == f'{tr_id_fail} SideEffects 1'
-    assert fail_logs[3]['message'] == f'{tr_id_fail} SideEffect run_b_action'
-    assert fail_logs[4]['message'] == f'{b_tr_fail} Start AProcess go_to_B {b_process.state.instance_key} {tr_id_fail} {tr_id_fail}'
-    assert fail_logs[5]['message'] == f'{b_tr_fail} Lock'
-    assert fail_logs[6]['message'] == f'{b_tr_fail} SideEffects 1'
-    assert fail_logs[7]['message'] == f'{b_tr_fail} SideEffect run_c_action'
-    assert fail_logs[8]['message'].startswith(f'{b_tr_fail} Process class') and staff_user.username in fail_logs[8]['message']
-    assert fail_logs[9]['message'] == f'{b_tr_fail} FailureSideEffects 0'
-    assert fail_logs[10]['message'] == f'{b_tr_fail} Unlock'
-    assert fail_logs[11]['message'] == f'{b_tr_fail} Callbacks 1'
-    assert fail_logs[12]['message'] == f'{b_tr_fail} Callback save_error'
-    assert fail_logs[13]['message'].startswith(f'{tr_id_fail} Process class') and staff_user.username in fail_logs[13]['message']
-    assert fail_logs[14]['message'] == f'{tr_id_fail} FailureSideEffects 0'
-    assert fail_logs[15]['message'] == f'{tr_id_fail} Unlock'
-    assert fail_logs[16]['message'] == f'{tr_id_fail} Callbacks 1'
-    assert fail_logs[17]['message'] == f'{tr_id_fail} Callback save_error'
+    fail_logs.check(f'{tr_id_fail} Start AProcess go_to_B {process.state.instance_key} {tr_id_fail} {tr_id_fail}')
+    fail_logs.check(f'{tr_id_fail} Lock')
+    fail_logs.check(f'{tr_id_fail} SideEffects 1')
+    fail_logs.check(f'{tr_id_fail} SideEffect run_b_action')
+    fail_logs.check(f'{b_tr_fail} Start AProcess go_to_B {b_process.state.instance_key} {tr_id_fail} {tr_id_fail}')
+    fail_logs.check(f'{b_tr_fail} Lock')
+    fail_logs.check(f'{b_tr_fail} SideEffects 1')
+    fail_logs.check(f'{b_tr_fail} SideEffect run_c_action')
+    fail_logs.check(f'{b_tr_fail} Process class')
+    fail_logs.check(f'{b_tr_fail} FailureSideEffects 0')
+    fail_logs.check(f'{b_tr_fail} Unlock')
+    fail_logs.check(f'{b_tr_fail} Callbacks 1')
+    fail_logs.check(f'{b_tr_fail} Callback save_error')
+    fail_logs.check(f'{tr_id_fail} Process class')
+    fail_logs.check(f'{tr_id_fail} FailureSideEffects 0')
+    fail_logs.check(f'{tr_id_fail} Unlock')
+    fail_logs.check(f'{tr_id_fail} Callbacks 1')
+    fail_logs.check(f'{tr_id_fail} Callback save_error')
 
     # Second attempt: regular user succeeds, all move to B
     process = AProcess(instance=a)
@@ -396,34 +381,32 @@ def test_nested_calls_recovery_after_permission_failure(staff_user, user):
     assert c.status == STATES.B
 
     # Check successful attempt: all 3 processes succeed (A:7 + B:7 + C:6 = 20)
-    ok_logs = get_all_logs_by_root_id(tr_id_ok, expected_count=20, as_dict=True)
-    assert len(ok_logs) == 20, f"Should be 20 logs for successful attempt, got {len(ok_logs)}"
-
     ok_nested = get_nested_tr_ids(tr_id_ok, expected_count=2)
     b_tr_ok = ok_nested[0]
     c_tr_ok = ok_nested[1]
     c_process = CProcess(instance=c)
+    ok_logs = LogChecker(get_all_logs_by_root_id(tr_id_ok, as_dict=True))
 
-    assert ok_logs[0]['message'] == f'{tr_id_ok} Start AProcess go_to_B {process.state.instance_key} {tr_id_ok} {tr_id_ok}'
-    assert ok_logs[1]['message'] == f'{tr_id_ok} Lock'
-    assert ok_logs[2]['message'] == f'{tr_id_ok} SideEffects 1'
-    assert ok_logs[3]['message'] == f'{tr_id_ok} SideEffect run_b_action'
-    assert ok_logs[4]['message'] == f'{b_tr_ok} Start AProcess go_to_B {b_process.state.instance_key} {tr_id_ok} {tr_id_ok}'
-    assert ok_logs[5]['message'] == f'{b_tr_ok} Lock'
-    assert ok_logs[6]['message'] == f'{b_tr_ok} SideEffects 1'
-    assert ok_logs[7]['message'] == f'{b_tr_ok} SideEffect run_c_action'
-    assert ok_logs[8]['message'] == f'{c_tr_ok} Start AProcess go_to_B {c_process.state.instance_key} {tr_id_ok} {b_tr_ok}'
-    assert ok_logs[9]['message'] == f'{c_tr_ok} Lock'
-    assert ok_logs[10]['message'] == f'{c_tr_ok} SideEffects 0'
-    assert ok_logs[11]['message'] == f'{c_tr_ok} Set State B'
-    assert ok_logs[12]['message'] == f'{c_tr_ok} Unlock'
-    assert ok_logs[13]['message'] == f'{c_tr_ok} Callbacks 0'
-    assert ok_logs[14]['message'] == f'{b_tr_ok} Set State B'
-    assert ok_logs[15]['message'] == f'{b_tr_ok} Unlock'
-    assert ok_logs[16]['message'] == f'{b_tr_ok} Callbacks 0'
-    assert ok_logs[17]['message'] == f'{tr_id_ok} Set State B'
-    assert ok_logs[18]['message'] == f'{tr_id_ok} Unlock'
-    assert ok_logs[19]['message'] == f'{tr_id_ok} Callbacks 0'
+    ok_logs.check(f'{tr_id_ok} Start AProcess go_to_B {process.state.instance_key} {tr_id_ok} {tr_id_ok}')
+    ok_logs.check(f'{tr_id_ok} Lock')
+    ok_logs.check(f'{tr_id_ok} SideEffects 1')
+    ok_logs.check(f'{tr_id_ok} SideEffect run_b_action')
+    ok_logs.check(f'{b_tr_ok} Start AProcess go_to_B {b_process.state.instance_key} {tr_id_ok} {tr_id_ok}')
+    ok_logs.check(f'{b_tr_ok} Lock')
+    ok_logs.check(f'{b_tr_ok} SideEffects 1')
+    ok_logs.check(f'{b_tr_ok} SideEffect run_c_action')
+    ok_logs.check(f'{c_tr_ok} Start AProcess go_to_B {c_process.state.instance_key} {tr_id_ok} {b_tr_ok}')
+    ok_logs.check(f'{c_tr_ok} Lock')
+    ok_logs.check(f'{c_tr_ok} SideEffects 0')
+    ok_logs.check(f'{c_tr_ok} Set State B')
+    ok_logs.check(f'{c_tr_ok} Unlock')
+    ok_logs.check(f'{c_tr_ok} Callbacks 0')
+    ok_logs.check(f'{b_tr_ok} Set State B')
+    ok_logs.check(f'{b_tr_ok} Unlock')
+    ok_logs.check(f'{b_tr_ok} Callbacks 0')
+    ok_logs.check(f'{tr_id_ok} Set State B')
+    ok_logs.check(f'{tr_id_ok} Unlock')
+    ok_logs.check(f'{tr_id_ok} Callbacks 0')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -447,18 +430,17 @@ def test_nested_calls_missing_b_link(user):
     assert a.error is not None  # error from accessing None.b
 
     # Only AProcess logs (no nested processes started, run_b_action fails on obj.b)
-    logs = get_all_logs_by_root_id(tr_id, expected_count=9, as_dict=True)
-    assert len(logs) == 10, f"Should be 10 logs (A only, no nested), got {len(logs)}"
+    logs = LogChecker(get_all_logs_by_root_id(tr_id, as_dict=True))
 
-    assert logs[0]['message'] == f'{tr_id} Start AProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 1'
-    assert logs[3]['message'] == f'{tr_id} SideEffect run_b_action'
-    assert logs[4]['message'].startswith(f'{tr_id} ')  # error message from accessing None.b
-    assert logs[5]['message'] == f'{tr_id} FailureSideEffects 0'
-    assert logs[6]['message'] == f'{tr_id} Unlock'
-    assert logs[7]['message'] == f'{tr_id} Callbacks 1'
-    assert logs[8]['message'] == f'{tr_id} Callback save_error'
+    logs.check(f'{tr_id} Start AProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} Lock')
+    logs.check(f'{tr_id} SideEffects 1')
+    logs.check(f'{tr_id} SideEffect run_b_action')
+    logs.check(f'{tr_id} ')  # error message from accessing None.b
+    logs.check(f'{tr_id} FailureSideEffects 0')
+    logs.check(f'{tr_id} Unlock')
+    logs.check(f'{tr_id} Callbacks 1')
+    logs.check(f'{tr_id} Callback save_error')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -486,34 +468,32 @@ def test_nested_calls_missing_c_link(user):
     assert b.error is not None  # error from accessing None.c
 
     # A and B fail, C never starts (A:9 + B:9 = 18)
-    logs = get_all_logs_by_root_id(tr_id, expected_count=18, as_dict=True)
-    assert len(logs) == 19, f"Should be 19 logs total (A:9 + B:9, C never starts), got {len(logs)}"
-
     # Extract nested tr_id (only BProcess, CProcess never started)
-    nested_tr_ids = get_nested_tr_ids(tr_id, expected_count=1)
-    assert len(nested_tr_ids) == 1, "Should have 1 nested transition ID (BProcess only)"
-    b_tr_id = nested_tr_ids[0]
+    nested_tr_ids_list = get_nested_tr_ids(tr_id, expected_count=1)
+    assert len(nested_tr_ids_list) == 1, "Should have 1 nested transition ID (BProcess only)"
+    b_tr_id = nested_tr_ids_list[0]
     b_process = BProcess(instance=b)
+    logs = LogChecker(get_all_logs_by_root_id(tr_id, as_dict=True))
 
     # Full interleaved sequence: A starts -> B starts -> C access fails -> B fails -> A fails
-    assert logs[0]['message'] == f'{tr_id} Start AProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 1'
-    assert logs[3]['message'] == f'{tr_id} SideEffect run_b_action'
+    logs.check(f'{tr_id} Start AProcess go_to_B {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} Lock')
+    logs.check(f'{tr_id} SideEffects 1')
+    logs.check(f'{tr_id} SideEffect run_b_action')
     # BProcess starts inside AProcess's run_b_action side effect
-    assert logs[4]['message'] == f'{b_tr_id} Start AProcess go_to_B {b_process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[5]['message'] == f'{b_tr_id} Lock'
-    assert logs[6]['message'] == f'{b_tr_id} SideEffects 1'
-    assert logs[7]['message'] == f'{b_tr_id} SideEffect run_c_action'
+    logs.check(f'{b_tr_id} Start AProcess go_to_B {b_process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{b_tr_id} Lock')
+    logs.check(f'{b_tr_id} SideEffects 1')
+    logs.check(f'{b_tr_id} SideEffect run_c_action')
     # run_c_action fails accessing obj.c (None)
-    assert logs[8]['message'].startswith(f'{b_tr_id} ')  # error from accessing None.c
-    assert logs[9]['message'] == f'{b_tr_id} FailureSideEffects 0'
-    assert logs[10]['message'] == f'{b_tr_id} Unlock'
-    assert logs[11]['message'] == f'{b_tr_id} Callbacks 1'
-    assert logs[12]['message'] == f'{b_tr_id} Callback save_error'
+    logs.check(f'{b_tr_id} ')  # error from accessing None.c
+    logs.check(f'{b_tr_id} FailureSideEffects 0')
+    logs.check(f'{b_tr_id} Unlock')
+    logs.check(f'{b_tr_id} Callbacks 1')
+    logs.check(f'{b_tr_id} Callback save_error')
     # BProcess error propagates to AProcess
-    assert logs[13]['message'].startswith(f'{tr_id} ')  # same error from accessing None.c
-    assert logs[14]['message'] == f'{tr_id} FailureSideEffects 0'
-    assert logs[15]['message'] == f'{tr_id} Unlock'
-    assert logs[16]['message'] == f'{tr_id} Callbacks 1'
-    assert logs[17]['message'] == f'{tr_id} Callback save_error'
+    logs.check(f'{tr_id} ')  # same error from accessing None.c
+    logs.check(f'{tr_id} FailureSideEffects 0')
+    logs.check(f'{tr_id} Unlock')
+    logs.check(f'{tr_id} Callbacks 1')
+    logs.check(f'{tr_id} Callback save_error')

@@ -1,8 +1,9 @@
 import pytest
 from abstract.models import A, STATES
-from abstract.e2e.utils import wait_state_unlock, get_logs_by_tr_id
+from abstract.e2e.utils import wait_state_unlock, get_logs_by_tr_id, LogChecker
 from abstract.logic.test_branch import BranchProcess
 from django_logic.exceptions import TransitionNotAllowed
+from django_logic.logger import TransitionEventType
 
 
 # ────────────────────────────────────────────────────────────
@@ -21,14 +22,13 @@ def test_branch_user_goes_to_B(user):
     a.refresh_from_db()
     assert a.status == STATES.B
 
-    logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs"
-    assert logs[0]['message'] == f'{tr_id} Start BranchProcess go_next {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id} Set State B'
-    assert logs[4]['message'] == f'{tr_id} Unlock'
-    assert logs[5]['message'] == f'{tr_id} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id, as_dict=True))
+    logs.check(f'{tr_id} {TransitionEventType.START.value} BranchProcess go_next {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id} SideEffects 0')
+    logs.check(f'{tr_id} {TransitionEventType.SET_STATE.value} B')
+    logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id} Callbacks 0')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -43,14 +43,13 @@ def test_branch_superuser_goes_to_C(superuser):
     a.refresh_from_db()
     assert a.status == STATES.C
 
-    logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs"
-    assert logs[0]['message'] == f'{tr_id} Start BranchProcess go_next {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id} Set State C'
-    assert logs[4]['message'] == f'{tr_id} Unlock'
-    assert logs[5]['message'] == f'{tr_id} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id, as_dict=True))
+    logs.check(f'{tr_id} {TransitionEventType.START.value} BranchProcess go_next {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id} SideEffects 0')
+    logs.check(f'{tr_id} {TransitionEventType.SET_STATE.value} C')
+    logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id} Callbacks 0')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -95,14 +94,13 @@ def test_conditional_branch_special(user):
     a.refresh_from_db()
     assert a.status == STATES.E
 
-    logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs"
-    assert logs[0]['message'] == f'{tr_id} Start BranchProcess conditional_go {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id} Set State E'
-    assert logs[4]['message'] == f'{tr_id} Unlock'
-    assert logs[5]['message'] == f'{tr_id} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id, as_dict=True))
+    logs.check(f'{tr_id} {TransitionEventType.START.value} BranchProcess conditional_go {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id} SideEffects 0')
+    logs.check(f'{tr_id} {TransitionEventType.SET_STATE.value} E')
+    logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id} Callbacks 0')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -117,14 +115,13 @@ def test_conditional_branch_not_special(user):
     a.refresh_from_db()
     assert a.status == STATES.F
 
-    logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs"
-    assert logs[0]['message'] == f'{tr_id} Start BranchProcess conditional_go {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id} Set State F'
-    assert logs[4]['message'] == f'{tr_id} Unlock'
-    assert logs[5]['message'] == f'{tr_id} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id, as_dict=True))
+    logs.check(f'{tr_id} {TransitionEventType.START.value} BranchProcess conditional_go {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id} SideEffects 0')
+    logs.check(f'{tr_id} {TransitionEventType.SET_STATE.value} F')
+    logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id} Callbacks 0')
 
 
 # ────────────────────────────────────────────────────────────
@@ -143,14 +140,13 @@ def test_converge_from_B_to_D(user):
     a.refresh_from_db()
     assert a.status == STATES.D
 
-    logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs"
-    assert logs[0]['message'] == f'{tr_id} Start BranchProcess go_to_D {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id} Set State D'
-    assert logs[4]['message'] == f'{tr_id} Unlock'
-    assert logs[5]['message'] == f'{tr_id} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id, as_dict=True))
+    logs.check(f'{tr_id} {TransitionEventType.START.value} BranchProcess go_to_D {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id} SideEffects 0')
+    logs.check(f'{tr_id} {TransitionEventType.SET_STATE.value} D')
+    logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id} Callbacks 0')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -165,14 +161,13 @@ def test_converge_from_C_to_D(user):
     a.refresh_from_db()
     assert a.status == STATES.D
 
-    logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs"
-    assert logs[0]['message'] == f'{tr_id} Start BranchProcess go_to_D {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id} Set State D'
-    assert logs[4]['message'] == f'{tr_id} Unlock'
-    assert logs[5]['message'] == f'{tr_id} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id, as_dict=True))
+    logs.check(f'{tr_id} {TransitionEventType.START.value} BranchProcess go_to_D {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id} SideEffects 0')
+    logs.check(f'{tr_id} {TransitionEventType.SET_STATE.value} D')
+    logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id} Callbacks 0')
 
 
 # ────────────────────────────────────────────────────────────
@@ -191,14 +186,13 @@ def test_branch_then_converge_user(user):
     a.refresh_from_db()
     assert a.status == STATES.B
 
-    logs = get_logs_by_tr_id(tr_id_1, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs for branch"
-    assert logs[0]['message'] == f'{tr_id_1} Start BranchProcess go_next {process.state.instance_key} {tr_id_1} {tr_id_1}'
-    assert logs[1]['message'] == f'{tr_id_1} Lock'
-    assert logs[2]['message'] == f'{tr_id_1} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id_1} Set State B'
-    assert logs[4]['message'] == f'{tr_id_1} Unlock'
-    assert logs[5]['message'] == f'{tr_id_1} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id_1, as_dict=True))
+    logs.check(f'{tr_id_1} {TransitionEventType.START.value} BranchProcess go_next {process.state.instance_key} {tr_id_1} {tr_id_1}')
+    logs.check(f'{tr_id_1} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id_1} SideEffects 0')
+    logs.check(f'{tr_id_1} {TransitionEventType.SET_STATE.value} B')
+    logs.check(f'{tr_id_1} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id_1} Callbacks 0')
 
     # Converge to D
     process = BranchProcess(instance=a)
@@ -207,14 +201,13 @@ def test_branch_then_converge_user(user):
     a.refresh_from_db()
     assert a.status == STATES.D
 
-    logs = get_logs_by_tr_id(tr_id_2, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs for converge"
-    assert logs[0]['message'] == f'{tr_id_2} Start BranchProcess go_to_D {process.state.instance_key} {tr_id_2} {tr_id_2}'
-    assert logs[1]['message'] == f'{tr_id_2} Lock'
-    assert logs[2]['message'] == f'{tr_id_2} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id_2} Set State D'
-    assert logs[4]['message'] == f'{tr_id_2} Unlock'
-    assert logs[5]['message'] == f'{tr_id_2} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id_2, as_dict=True))
+    logs.check(f'{tr_id_2} {TransitionEventType.START.value} BranchProcess go_to_D {process.state.instance_key} {tr_id_2} {tr_id_2}')
+    logs.check(f'{tr_id_2} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id_2} SideEffects 0')
+    logs.check(f'{tr_id_2} {TransitionEventType.SET_STATE.value} D')
+    logs.check(f'{tr_id_2} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id_2} Callbacks 0')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -229,14 +222,13 @@ def test_branch_then_converge_superuser(superuser, user):
     a.refresh_from_db()
     assert a.status == STATES.C
 
-    logs = get_logs_by_tr_id(tr_id_1, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs for branch"
-    assert logs[0]['message'] == f'{tr_id_1} Start BranchProcess go_next {process.state.instance_key} {tr_id_1} {tr_id_1}'
-    assert logs[1]['message'] == f'{tr_id_1} Lock'
-    assert logs[2]['message'] == f'{tr_id_1} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id_1} Set State C'
-    assert logs[4]['message'] == f'{tr_id_1} Unlock'
-    assert logs[5]['message'] == f'{tr_id_1} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id_1, as_dict=True))
+    logs.check(f'{tr_id_1} {TransitionEventType.START.value} BranchProcess go_next {process.state.instance_key} {tr_id_1} {tr_id_1}')
+    logs.check(f'{tr_id_1} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id_1} SideEffects 0')
+    logs.check(f'{tr_id_1} {TransitionEventType.SET_STATE.value} C')
+    logs.check(f'{tr_id_1} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id_1} Callbacks 0')
 
     # Converge to D
     process = BranchProcess(instance=a)
@@ -245,14 +237,13 @@ def test_branch_then_converge_superuser(superuser, user):
     a.refresh_from_db()
     assert a.status == STATES.D
 
-    logs = get_logs_by_tr_id(tr_id_2, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs for converge"
-    assert logs[0]['message'] == f'{tr_id_2} Start BranchProcess go_to_D {process.state.instance_key} {tr_id_2} {tr_id_2}'
-    assert logs[1]['message'] == f'{tr_id_2} Lock'
-    assert logs[2]['message'] == f'{tr_id_2} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id_2} Set State D'
-    assert logs[4]['message'] == f'{tr_id_2} Unlock'
-    assert logs[5]['message'] == f'{tr_id_2} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id_2, as_dict=True))
+    logs.check(f'{tr_id_2} {TransitionEventType.START.value} BranchProcess go_to_D {process.state.instance_key} {tr_id_2} {tr_id_2}')
+    logs.check(f'{tr_id_2} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id_2} SideEffects 0')
+    logs.check(f'{tr_id_2} {TransitionEventType.SET_STATE.value} D')
+    logs.check(f'{tr_id_2} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id_2} Callbacks 0')
 
 
 # ────────────────────────────────────────────────────────────
@@ -270,15 +261,14 @@ def test_branch_and_chain(user):
     a.refresh_from_db()
     assert a.status == STATES.D
 
-    logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    assert len(logs) == 7, "Should be 7 logs"
-    assert logs[0]['message'] == f'{tr_id} Start BranchProcess go_and_chain {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id} Set State B'
-    assert logs[4]['message'] == f'{tr_id} Unlock'
-    assert logs[5]['message'] == f'{tr_id} Callbacks 1'
-    assert logs[6]['message'] == f'{tr_id} Callback callback'
+    logs = LogChecker(get_logs_by_tr_id(tr_id, as_dict=True))
+    logs.check(f'{tr_id} {TransitionEventType.START.value} BranchProcess go_and_chain {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id} SideEffects 0')
+    logs.check(f'{tr_id} {TransitionEventType.SET_STATE.value} B')
+    logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id} Callbacks 1')
+    logs.check(f'{tr_id} Callback callback')
 
 
 # ────────────────────────────────────────────────────────────
@@ -304,14 +294,13 @@ def test_branch_recovery_after_no_permission(staff_user, user):
     a.refresh_from_db()
     assert a.status == STATES.B
 
-    logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs"
-    assert logs[0]['message'] == f'{tr_id} Start BranchProcess go_next {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id} Set State B'
-    assert logs[4]['message'] == f'{tr_id} Unlock'
-    assert logs[5]['message'] == f'{tr_id} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id, as_dict=True))
+    logs.check(f'{tr_id} {TransitionEventType.START.value} BranchProcess go_next {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id} SideEffects 0')
+    logs.check(f'{tr_id} {TransitionEventType.SET_STATE.value} B')
+    logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id} Callbacks 0')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -333,14 +322,13 @@ def test_branch_recovery_after_ambiguous(user):
     a.refresh_from_db()
     assert a.status == STATES.B
 
-    logs = get_logs_by_tr_id(tr_id, as_dict=True)
-    assert len(logs) == 6, "Should be 6 logs"
-    assert logs[0]['message'] == f'{tr_id} Start BranchProcess go_next {process.state.instance_key} {tr_id} {tr_id}'
-    assert logs[1]['message'] == f'{tr_id} Lock'
-    assert logs[2]['message'] == f'{tr_id} SideEffects 0'
-    assert logs[3]['message'] == f'{tr_id} Set State B'
-    assert logs[4]['message'] == f'{tr_id} Unlock'
-    assert logs[5]['message'] == f'{tr_id} Callbacks 0'
+    logs = LogChecker(get_logs_by_tr_id(tr_id, as_dict=True))
+    logs.check(f'{tr_id} {TransitionEventType.START.value} BranchProcess go_next {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id} SideEffects 0')
+    logs.check(f'{tr_id} {TransitionEventType.SET_STATE.value} B')
+    logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id} Callbacks 0')
 
 
 # ────────────────────────────────────────────────────────────

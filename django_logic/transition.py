@@ -283,6 +283,7 @@ class BackgroundTransition(Transition):
         """
         Change the state to the in-progress state.
         """
+        kwargs.pop('background_mode', None)  # avoid duplicate kwarg when caller passes it
         return super().change_state(state, background_mode=True, **kwargs)
 
     def run_in_background(self, state: State, **kwargs):

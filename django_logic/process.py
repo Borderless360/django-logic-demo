@@ -1,7 +1,5 @@
 import uuid
 import warnings
-from functools import partial
-
 from django_logic.logger import TransitionEventType
 from django_logic.commands import Conditions, Permissions
 from django_logic.constants import LogType
@@ -54,7 +52,14 @@ class Process(object):
         self.logger = get_logger(module_name=__name__)
 
     def __getattr__(self, item):
-        return partial(self._get_transition_method, item)
+        def transition_method(*args, **kwargs):
+            # Strip action_name from kwargs before calling; otherwise when kwargs
+            # from a parent transition (e.g. Celery task or nested side-effect)
+            # include action_name, we get "multiple values for argument 'action_name'"
+            # during argument binding, before _get_transition_method even runs.
+            kwargs.pop('action_name', None)
+            return self._get_transition_method(item, **kwargs)
+        return transition_method
 
     def _get_transition_method(self, action_name: str, **kwargs):
         """
