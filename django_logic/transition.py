@@ -22,7 +22,7 @@ class BaseTransition(ABC):
     conditions_class = Conditions
     next_transition_class = NextTransition
 
-    def is_valid(self, state: State, user=None) -> bool:
+    def is_valid(self, instance: object, user=None) -> bool:
         raise NotImplementedError
 
     def change_state(self, state: State, **kwargs):
@@ -86,16 +86,15 @@ class Transition(BaseTransition):
     def __repr__(self):
         return self.__str__()
 
-    def is_valid(self, state: State, user=None) -> bool:
+    def is_valid(self, instance: object, user=None) -> bool:
         """
         It validates that this process meets conditions and passes permissions
-        :param state: State object
+        :param instance: object instance
         :param user: any object used to pass permissions
         :return: True or False
         """
-        return (not state.is_locked() and
-                self.permissions.execute(state, user) and
-                self.conditions.execute(state))
+        return (self.permissions.execute(instance, user) and
+                self.conditions.execute(instance))
 
     def change_state(self, state: State, **kwargs) -> UUID | None:
         """
@@ -142,8 +141,11 @@ class Transition(BaseTransition):
 
                 self._log_set_state(self.in_progress_state, kwargs)
 
-        # Run in background only if it's a root transition
-        if kwargs.get('background_mode', False) and kwargs.get('root_id') == kwargs.get('tr_id'):
+        # Note: Only root transition can be run in background
+        if kwargs.get('background_mode', False) \
+        and not kwargs.get('background_mode_phase_2', False) \
+        and kwargs.get('root_id') == kwargs.get('tr_id'): 
+            self._log_background_mode(kwargs)
             self.run_in_background(state, **kwargs)
         else:
             self._init_transition_context(kwargs)
@@ -223,6 +225,9 @@ class Transition(BaseTransition):
     def _log_unlock(self, kwargs: dict):
         transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.UNLOCK.value}')
 
+    def _log_background_mode(self, kwargs: dict):
+        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.BACKGROUND_MODE.value}')
+
     @staticmethod
     def _init_transition_context(kwargs: dict) -> None:
         if 'context' not in kwargs:
@@ -274,6 +279,12 @@ class BackgroundTransition(Transition):
         self.queue_name = queue_name
         super().__init__(action_name=action_name, sources=sources, target=target, **kwargs)
 
+    def change_state(self, state: State, **kwargs):
+        """
+        Change the state to the in-progress state.
+        """
+        return super().change_state(state, background_mode=True, **kwargs)
+
     def run_in_background(self, state: State, **kwargs):
         """
         Run the transition in background.
@@ -288,7 +299,6 @@ class BackgroundTransition(Transition):
             'process_name': state.process_name,
             'field_name': state.field_name,
             'process_class': kwargs.get('process_class'),
-            'background_mode': True,
         }
         # Add user_id to task_kwargs
         if (user := kwargs.get('user')) is not None:

@@ -42,13 +42,17 @@ show-sql-migrate:
 	docker compose -p $(PROJECT_NAME) exec demo python manage.py sqlmigrate $(a) $(m)
 migrate:
 	make manage s=demo c=migrate
+worker-restart:
+	docker compose -p $(PROJECT_NAME) restart demo-worker
 test_locker:
 	make manage s=demo c=test_locker
 test_abstract:
 	make manage s=demo c=test_abstract
 test:
 	make migrate
+	make worker-restart
 	docker compose -p $(PROJECT_NAME) exec demo pytest
 test-one:
 	make migrate
+	make worker-restart
 	docker compose -p $(PROJECT_NAME) exec demo pytest $(t) 

@@ -61,7 +61,7 @@ class Process(object):
         It returns a callable transition method for the provided action name.
         """
         user = kwargs['user'] if 'user' in kwargs else None
-        transitions = list(self.get_available_transitions(action_name=action_name, user=user))
+        transitions = list(self.get_available_transitions(action_name=action_name, user=user, ignore_state=True))
 
         if len(transitions) == 1:
             transition = transitions[0]
@@ -154,7 +154,7 @@ class Process(object):
         return sorted(set([transition.action_name for transition in
                            self.get_available_transitions(user, action_name)]))
 
-    def get_available_transitions(self, user=None, action_name=None):
+    def get_available_transitions(self, user=None, action_name=None, ignore_state=False):
         """
         It returns all available transition which meet conditions and pass permissions.
         Including nested processes.
@@ -165,11 +165,14 @@ class Process(object):
         if not self.is_valid(user):
             return
 
+        if not ignore_state and self.state.is_locked():
+            return
+
         for transition in self.transitions:
             if action_name is not None and transition.action_name != action_name:
                 continue
 
-            if self.state.cached_state in transition.sources and transition.is_valid(self.state, user):
+            if self.state.cached_state in transition.sources and transition.is_valid(self.state.instance, user):
                 yield transition
 
         for sub_process_class in self.nested_processes:

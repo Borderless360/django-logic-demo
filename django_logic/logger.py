@@ -83,3 +83,4 @@ class TransitionEventType(Enum):
     LOCK = 'Lock'
     UNLOCK = 'Unlock'
     NEXT_TRANSITION = 'Next Transition'
+    BACKGROUND_MODE = 'Background Mode'
