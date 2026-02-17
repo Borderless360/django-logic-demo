@@ -99,7 +99,7 @@ LOGGING = {
     },
     'formatters': {
         'verbose': {
-            'format': '%(levelname) -10s %(asctime)s %(module)s:%(lineno)s %(funcName)s %(message)s',
+            'format': '%(levelname)-10s %(asctime)s %(message)s',
         },
     },
     'loggers': {
@@ -108,7 +108,7 @@ LOGGING = {
             'level': logging.INFO,
         },
         'django-logic': {
-            'handlers': ['console', 'file', 'clickhouse'],
+            'handlers': ['file', 'clickhouse'],
             'level': logging.INFO,
         },
     },

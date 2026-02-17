@@ -116,7 +116,12 @@ class Transition(BaseTransition):
         # Background Mode has two phases:
         # Phase 1: Lock state and push transition to message broker
         # Phase 2: Run transition inline in worker with skipping lock state
-        if not kwargs.get('background_mode_phase_2', False):
+        # Only the root transition in phase 2 skips lock; nested transitions must lock and log.
+        skip_lock = (
+            kwargs.get('background_mode_phase_2', False)
+            and kwargs.get('root_id') == kwargs.get('tr_id')
+        )
+        if not skip_lock:
             if state.is_locked() or not state.lock():
                 # DEPRECATED
                 self.logger.info(f'{state.instance_key} is locked',
@@ -297,6 +302,7 @@ class BackgroundTransition(Transition):
             'model_name': state.instance._meta.model_name,
             'instance_id': state.instance.pk,
             'action_name': self.action_name,
+            'target': self.target,
             'process_name': state.process_name,
             'field_name': state.field_name,
             'process_class': kwargs.get('process_class'),
@@ -309,3 +315,4 @@ class BackgroundTransition(Transition):
                 task_kwargs[key] = str(kwargs[key]) if kwargs[key] else None
 
         run_transition_in_background.apply_async(kwargs=task_kwargs, queue=self.queue_name)
+

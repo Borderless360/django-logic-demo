@@ -1,11 +1,9 @@
 import time
-import logging
 from django_logic.state import State
 from clickhouse.client import client
-from django_logic.logger import TransitionEventType
+from django_logic.logger import TransitionEventType, logger
 
 
-logger = logging.getLogger(__name__)
 def wait_state_unlock(state: State, max_retries: int = 10, retry_delay: float = 1) -> bool:
     """
     Wait for a state to be unlocked.
@@ -224,16 +222,17 @@ class LogChecker:
 
     def check(self, value: str) -> bool:
         skiped_logs = []
+        start_index = self.index
         while self.index < len(self.logs):
             if self.logs[self.index]['message'].startswith(value):
                 self.index += 1
-                return True
+                return
             skiped_logs.append(self.logs[self.index])
             self.index += 1
         logger.error(f"Skipped logs: {len(skiped_logs)}")
         for log in skiped_logs:
             logger.error(log['message'])
-        raise AssertionError(f"Log entry containing {value!r} not found (checked from position {self.index}, {len(self.logs)} total).")
+        raise AssertionError(f"Log entry containing {value!r} not found (checked from position {start_index}, {len(self.logs)} total).")
 
 
 def verify_celery_worker_running(celery_app, max_retries: int = 5, retry_delay: float = 0.1) -> bool:
