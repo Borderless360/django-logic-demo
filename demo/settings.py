@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'invoice',
     'clickhouse',
     'django_logic',
+    'django_logic_celery',
     'django_logic_ext',
 ]
 MIDDLEWARE = [

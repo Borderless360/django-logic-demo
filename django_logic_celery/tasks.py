@@ -1,5 +1,4 @@
 from celery import shared_task
-from django_logic.logger import transition_logger, TransitionEventType
 from django_logic.utils import restore_user_object, restore_action
 
 

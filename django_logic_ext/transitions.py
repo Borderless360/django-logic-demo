@@ -1,24 +1,24 @@
 import logging
-from importlib import import_module
 from uuid import UUID
 
-from django.db import transaction, IntegrityError
 from django.utils import timezone
 from django_logic import Transition, SideEffects, Callbacks
-from django_logic.exceptions import TransitionNotAllowed
 from django_logic.state import State
-from django_logic.transition import BackgroundTransition
+from django_logic.transition import Transition
 
 from django_logic_ext.apps import DjangoLogicExtAppConfig as AppConfig
 from django_logic_ext.models import TransitionMessage
-from django_logic_ext.utils import extract_command_for_state
 
 logger = logging.getLogger(__name__)
 
 
-class MQTransition(BackgroundTransition):
+class MQTransition(Transition):
     """ Transition that implements message queue pattern for django_logic """
     transition_message: TransitionMessage
+
+    def __init__(self, action_name: str, sources: list, target: str, queue_name: str = 'celery', **kwargs):
+        self.queue_name = queue_name
+        super().__init__(action_name=action_name, sources=sources, target=target, **kwargs)
 
     def __str__(self):
         return f"MQTransition: {self.action_name} to {self.target}"
@@ -55,6 +55,13 @@ class MQTransition(BackgroundTransition):
             kwargs['user_id'] = user.id
 
         return self._make_json_serializable(kwargs)
+
+    def change_state(self, state: State, **kwargs):
+        """
+        Change the state to the in-progress state.
+        """
+        kwargs.pop('background_mode', None)  # avoid duplicate kwarg when caller passes it
+        return super().change_state(state, background_mode=True, **kwargs)
 
     @staticmethod
     def get_instance_lookup(state: State):
