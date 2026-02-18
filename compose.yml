@@ -16,7 +16,7 @@ x-demo:
     DEBUG: True 
     DB_HOST: ${DB_HOST:-db}
     DB_PORT: ${DB_PORT:-5432}
-    DB_NAME: ${DB_NAME:-demo}
+    DB_NAME: ${DB_NAME:-main}
     DB_USER: ${DB_USER:-postgres}
     DB_PASSWORD: ${DB_PASSWORD:-123456}
     CLICKHOUSE_HOST    : ${CLICKHOUSE_HOST:-clickhouse}
@@ -42,7 +42,7 @@ services:
     environment:
       POSTGRES_USER    : ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-123456}
-      POSTGRES_DB      : ${DB_NAME:-demo}
+      POSTGRES_DB      : ${DB_NAME:-main}
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "${DB_USER:-postgres}"]
       interval: 30s

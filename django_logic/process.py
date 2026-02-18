@@ -113,8 +113,9 @@ class Process(object):
         """
         permissions = self.permissions_class(commands=self.permissions)
         conditions = self.conditions_class(commands=self.conditions)
-        return (permissions.execute(self.state, user) and
-                conditions.execute(self.state))
+        instance = self.state.instance
+        return (permissions.execute(instance, user) and
+                conditions.execute(instance))
 
     def get_available_actions(self, user=None, action_name=None):
         """
