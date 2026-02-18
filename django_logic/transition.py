@@ -154,7 +154,11 @@ class Transition(BaseTransition):
             self.run_in_background(state, **kwargs)
         else:
             self._init_transition_context(kwargs)
-            self.side_effects.execute(state, **kwargs)
+            try:
+                self.side_effects.execute(state, **kwargs)
+            except Exception as e:
+                self._log_fail(kwargs, e)
+                raise e
 
         return kwargs.get('tr_id', None)
 
@@ -232,6 +236,12 @@ class Transition(BaseTransition):
 
     def _log_background_mode(self, kwargs: dict):
         transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.BACKGROUND_MODE.value}')
+    
+    def _log_fail(self, kwargs: dict, exception: Exception):
+        transition_logger.error(
+            f"{kwargs.get('tr_id')} {TransitionEventType.FAIL.value}: {type(exception).__name__}: {exception}",
+            exc_info=True,
+        )
 
     @staticmethod
     def _init_transition_context(kwargs: dict) -> None:

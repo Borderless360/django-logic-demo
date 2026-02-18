@@ -40,17 +40,16 @@ def restore_action(
     app_label, model_name, instance_id, field_name, 
     process_class, action_name, user
 ):
-    process = get_process_and_state(
-        app_label=app_label,
-        model_name=model_name,
-        instance_id=instance_id,
-        process_class=process_class,
-        field_name=field_name,
-    )
-    transitions = process.get_available_transitions(action_name=action_name, user=user)
-    if not transitions:
-        return None, None
+    """Restore action from serialized kwargs."""
+    # Instance
+    app = apps.get_app_config(app_label)
+    model = app.get_model(model_name)
+    instance = model.objects.get(pk=instance_id)
+    # Process
+    module_path, class_name = process_class.rsplit('.', 1)
+    module = importlib.import_module(module_path)
+    process_class_obj = getattr(module, class_name)
+    process =process_class_obj(field_name=field_name, instance=instance)
 
-    transition = transitions[0]
-    transition = None 
+    transition = process.get_transition_by_action_name(action_name=action_name, user=user)
     return process, transition
