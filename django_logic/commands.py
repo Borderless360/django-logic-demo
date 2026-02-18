@@ -86,6 +86,7 @@ class Callbacks(BaseCommand):
         it will stop execution and send a message to the logger.
         Please note, it doesn't run failure callbacks in case of exception.
         """
+        # TODO: Crash of one callback shouldn't stop the execution of other callbacks.
         try:
             logger.info(f'{kwargs.get("tr_id")} Callbacks {len(self._commands)}')
             for command in self.commands:

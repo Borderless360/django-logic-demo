@@ -1,12 +1,10 @@
-from django.apps import apps
-from django.contrib.auth import get_user_model
 from django.utils import timezone
-from django_logic.state import State
+from django_logic.utils import restore_action
+from django_logic.exceptions import TransitionNotAllowed
 
 from django_logic_ext.models import TransitionMessage
-from django_logic_ext.transitions import MQTransition
+from django_logic.utils import restore_user_object
 
-User = get_user_model()
 
 
 class TransitionMessageHandler:
@@ -16,45 +14,27 @@ class TransitionMessageHandler:
     def __init__(self, message: TransitionMessage):
         self.message = message
 
-    @classmethod
-    def get_action_and_state_from_message(
-        cls, message: TransitionMessage, user: User | None = None
-    ) -> tuple[MQTransition, State] | tuple[None, None]:
-        app = apps.get_app_config(message.app_label)
-        model = app.get_model(message.model_name)
-
-        try:
-            instance = model.objects.get(id=message.instance_id)
-        except model.DoesNotExist:
-            return None, None
-
-        process = getattr(instance, message.process_name)
-        transitions = list(process.get_available_transitions(action_name=message.transition_name, user=user))
-        if not transitions:
-            return None, None
-
-        return transitions[0], process.state
-
     def handle_message(self, logger=None):
-        """
-        Runs side effects for a transition message.
-        If side effects are failed, increments errors_count and saves error message.
-        If side effects are successful, marks message as completed.
-        Should be called inside atomic transaction.
-        """
-        kwargs = self.message.kwargs
-        if user_id := kwargs.get('user_id'):
-            kwargs['user'] = User.objects.get(id=user_id)
-            del kwargs['user_id']
 
-        action, state = self.get_action_and_state_from_message(self.message, user=kwargs.get('user'))
-        if not action:
+        restore_user_object(self.message.kwargs)
+        try:
+            process, action = restore_action(
+                app_label=self.message.app_label,
+                model_name=self.message.model_name,
+                instance_id=self.message.instance_id,
+                field_name=self.message.field_name,
+                process_class=self.message.process_class,
+                action_name=self.message.transition_name,
+                user=self.message.kwargs.get('user'),
+            )
+        except TransitionNotAllowed as e:
             self.message.mark_as_completed()
             return
-        action.transition_message = self.message
 
+        action.transition_message = self.message
         try:
-            action.side_effects.execute(state, **kwargs)
+            self.message.kwargs['background_mode_phase_2'] = True
+            action.change_state(process.state, **self.message.kwargs)
         except Exception as e:
             self.message.errors_count += 1
             self.message.last_error_message = str(e)

@@ -301,12 +301,7 @@ class BackgroundTransition(Transition):
         kwargs.pop('background_mode', None)  # avoid duplicate kwarg when caller passes it
         return super().change_state(state, background_mode=True, **kwargs)
 
-    def run_in_background(self, state: State, **kwargs):
-        """
-        Run the transition in background.
-        """
-        # Build serializable kwargs for the Celery task 
-        # (no run_in_background so task runs inline)
+    def get_task_kwargs(self, state: State, **kwargs):
         task_kwargs = {
             'app_label': state.instance._meta.app_label,
             'model_name': state.instance._meta.model_name,
@@ -318,11 +313,21 @@ class BackgroundTransition(Transition):
             'process_class': kwargs.get('process_class'),
         }
         # Add user_id to task_kwargs
-        if (user := kwargs.get('user')) is not None:
+        if 'user_id' in kwargs:
+            task_kwargs['user_id'] = kwargs['user_id']
+        elif (user := kwargs.get('user')) is not None:
             task_kwargs['user_id'] = user.id
+
         for key in ('tr_id', 'root_id', 'parent_id'):
             if key in kwargs:
                 task_kwargs[key] = str(kwargs[key]) if kwargs[key] else None
 
+        return task_kwargs
+
+    def run_in_background(self, state: State, **kwargs):
+        """
+        Run the transition in background.
+        """
+        task_kwargs = self.get_task_kwargs(state, **kwargs)
         run_transition_in_background.apply_async(kwargs=task_kwargs, queue=self.queue_name)
 

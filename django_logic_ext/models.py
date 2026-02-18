@@ -14,6 +14,8 @@ class TransitionMessage(TimeStampedModel):
     model_name = models.CharField(max_length=100)
     instance_id = models.PositiveIntegerField()
     process_name = models.CharField(max_length=100)
+    field_name = models.CharField(max_length=100, default='status')
+    process_class = models.CharField(max_length=100, blank=True, null=True)
     transition_name = models.CharField(max_length=100)
     args = models.JSONField(blank=True, default=list)
     kwargs = models.JSONField(blank=True, default=dict)
