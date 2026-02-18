@@ -78,13 +78,24 @@ class MQTransition(Transition):
             return super().is_valid(state, user)
         return self.permissions.execute(state, user) and self.conditions.execute(state)
 
+    @staticmethod
+    def _make_json_serializable(obj):
+        """Convert non-JSON-serializable values (e.g. UUID) to JSON-serializable form."""
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, dict):
+            return {k: MQTransition._make_json_serializable(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [MQTransition._make_json_serializable(v) for v in obj]
+        return obj
+
     def _get_kwargs_without_non_serializable_objects(self, kwargs: dict) -> dict:
         """
         Removes non serializeable objects from kwargs and add user_id for logging in HistoryMixin.
         TODO: avoid using project specific code inside django_logic_ext
         """
-        from hijack_app.actions import get_actual_user_from_request
-
+        # make a copy of kwargs to avoid modifying the original dictionary
+        kwargs = dict(kwargs)
         request = kwargs.get('request')
         if request:
             del kwargs['request']
@@ -95,10 +106,10 @@ class MQTransition(Transition):
 
         if request or user:
             if request:
-                user = get_actual_user_from_request(request)
+                user = request.user
             kwargs['user_id'] = user.id
 
-        return kwargs
+        return self._make_json_serializable(kwargs)
 
     @staticmethod
     def get_instance_lookup(state: State):
@@ -149,7 +160,7 @@ class MQTransition(Transition):
 
         def _handle_unkown_error(e):
             logger.error(f'Failed to create TransitionMessage: {e}')
-            raise TransitionNotAllowed('Temporary error: try again later.')
+            raise e
 
         # main code of function
         try:

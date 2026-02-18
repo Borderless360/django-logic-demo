@@ -66,76 +66,44 @@ class Process(object):
         It returns a callable transition method for the provided action name.
         """
         user = kwargs['user'] if 'user' in kwargs else None
-        transitions = list(self.get_available_transitions(action_name=action_name, user=user, ignore_state=True))
-
-        if len(transitions) == 1:
-            transition = transitions[0]
-            # DEPRECATED
-            self.logger.info(f"{self.state.instance_key}, process {self.process_name} "
-                             f"executes '{action_name}' transition from {self.state.cached_state} "
-                             f"to {transition.target}",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=self.state.get_log_data())
-
-            logger.info(
-                f"{self.state.instance_key}, process {self.process_name} "
-                f"executes '{action_name}' transition from {self.state.cached_state} "
-                f"to {transition.target}"
-            )
-
-            tr_id = uuid.uuid4()
-            kwargs['root_id'] = kwargs.get('root_id', tr_id)
-            kwargs['parent_id'] = kwargs.get('tr_id', tr_id)
-            kwargs['tr_id'] = tr_id
-            # Pass process class for cases where process is not bound to model
-            if 'process_class' not in kwargs:
-                process_class = f"{self.__class__.__module__}.{self.__class__.__name__}"
-                kwargs['process_class'] = process_class
-            
-            # Only catch exceptions at the top level (root_id == tr_id means this is the root transition)
-            # Nested transitions should propagate exceptions to their parents
-            is_root = kwargs.get('root_id') == tr_id
-            if is_root:
-                try:
-                    return transition.change_state(self.state, **kwargs)
-                except Exception as e:
-                    transition_logger.error(
-                        f"{tr_id} {TransitionEventType.FAIL.value}: {type(e).__name__}: {e}",
-                        exc_info=True
-                    )
-                    # Do not re-raise the exception, just return the tr_id
-                    # We need this for backward compatibility with the old code for now
-                    return tr_id
-            else:
-                return transition.change_state(self.state, **kwargs)
-
-        elif len(transitions) > 1:
-            # DEPRECATED
-            self.logger.info(f"Runtime error: {self.state.instance_key} has several "
-                             f"transitions with action name '{action_name}'. "
-                             f"Make sure to specify conditions and permissions accordingly to fix such case",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=self.state.get_log_data())
-
-            logger.info(
-                f"Runtime error: {self.state.instance_key} has several "
-                f"transitions with action name '{action_name}'. "
-                f"Make sure to specify conditions and permissions accordingly to fix such case"
-                )
-            raise TransitionNotAllowed("There are several transitions available")
-        
+        transition = self.get_transition_by_action_name(action_name, user)
         # DEPRECATED
-        self.logger.info(f"Process class {self.__class__} for object {self.instance.id} has no transition "
-                         f"with action name {action_name}, user {user}",
-                         log_type=LogType.TRANSITION_DEBUG,
-                         log_data=self.state.get_log_data())
-
+        self.logger.info(f"{self.state.instance_key}, process {self.process_name} "
+                            f"executes '{action_name}' transition from {self.state.cached_state} "
+                            f"to {transition.target}",
+                            log_type=LogType.TRANSITION_DEBUG,
+                            log_data=self.state.get_log_data())
         logger.info(
-            f"Process class {self.__class__} for object {self.instance.id} has no transition "
-            f"with action name {action_name}, user {user}"
-            )
-        raise TransitionNotAllowed(f"Process class {self.__class__} for object {self.instance.id} has no transition "
-                                   f"with action name {action_name}, user {user}")
+            f"{self.state.instance_key}, process {self.process_name} "
+            f"executes '{action_name}' transition from {self.state.cached_state} "
+            f"to {transition.target}"
+        )
+
+        tr_id = uuid.uuid4()
+        kwargs['root_id'] = kwargs.get('root_id', tr_id)
+        kwargs['parent_id'] = kwargs.get('tr_id', tr_id)
+        kwargs['tr_id'] = tr_id
+        # Pass process class for cases where process is not bound to model
+        if 'process_class' not in kwargs:
+            process_class = f"{self.__class__.__module__}.{self.__class__.__name__}"
+            kwargs['process_class'] = process_class
+        
+        # Only catch exceptions at the top level (root_id == tr_id means this is the root transition)
+        # Nested transitions should propagate exceptions to their parents
+        is_root = kwargs.get('root_id') == tr_id
+        if is_root:
+            try:
+                return transition.change_state(self.state, **kwargs)
+            except Exception as e:
+                transition_logger.error(
+                    f"{tr_id} {TransitionEventType.FAIL.value}: {type(e).__name__}: {e}",
+                    exc_info=True
+                )
+                # Do not re-raise the exception, just return the tr_id
+                # We need this for backward compatibility with the old code for now
+                return tr_id
+        else:
+            return transition.change_state(self.state, **kwargs)
 
     def is_valid(self, user=None) -> bool:
         """
@@ -183,6 +151,48 @@ class Process(object):
         for sub_process_class in self.nested_processes:
             sub_process = sub_process_class(state=self.state)
             yield from sub_process.get_available_transitions(user=user, action_name=action_name)
+
+    def get_transition_by_action_name(self, action_name: str, user=None):
+        transitions = list(self.get_available_transitions(action_name=action_name, user=user, ignore_state=True))
+        if len(transitions) == 1:
+            transition = transitions[0]
+            # DEPRECATED
+            self.logger.info(f"{self.state.instance_key}, process {self.process_name} "
+                             f"executes '{action_name}' transition from {self.state.cached_state} "
+                             f"to {transition.target}",
+                             log_type=LogType.TRANSITION_DEBUG,
+                             log_data=self.state.get_log_data())
+            logger.info(
+                f"{self.state.instance_key}, process {self.process_name} "
+                f"executes '{action_name}' transition from {self.state.cached_state} "
+                f"to {transition.target}"
+            )
+            return transition
+        elif len(transitions) > 1:
+            # DEPRECATED
+            self.logger.info(f"Runtime error: {self.state.instance_key} has several "
+                             f"transitions with action name '{action_name}'. "
+                             f"Make sure to specify conditions and permissions accordingly to fix such case",
+                             log_type=LogType.TRANSITION_DEBUG,
+                             log_data=self.state.get_log_data())
+            logger.info(
+                f"Runtime error: {self.state.instance_key} has several "
+                f"transitions with action name '{action_name}'. "
+                f"Make sure to specify conditions and permissions accordingly to fix such case"
+                )
+            raise TransitionNotAllowed("There are several transitions available")
+        
+        # DEPRECATED
+        self.logger.info(f"Process class {self.__class__} for object {self.instance.id} has no transition "
+                         f"with action name {action_name}, user {user}",
+                         log_type=LogType.TRANSITION_DEBUG,
+                         log_data=self.state.get_log_data())
+        logger.info(
+            f"Process class {self.__class__} for object {self.instance.id} has no transition "
+            f"with action name {action_name}, user {user}"
+            )
+        raise TransitionNotAllowed(f"Process class {self.__class__} for object {self.instance.id} has no transition "
+                                   f"with action name {action_name}, user {user}")
 
 
 class ProcessManager:

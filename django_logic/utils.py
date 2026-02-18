@@ -34,3 +34,23 @@ def get_process_and_state(app_label, model_name, instance_id, process_name,
     instance = model.objects.get(pk=instance_id)
     process = get_process_instance(instance, process_name, process_class, field_name)
     return process, process.state
+
+
+def restore_action(
+    app_label, model_name, instance_id, field_name, 
+    process_class, action_name, user
+):
+    process = get_process_and_state(
+        app_label=app_label,
+        model_name=model_name,
+        instance_id=instance_id,
+        process_class=process_class,
+        field_name=field_name,
+    )
+    transitions = process.get_available_transitions(action_name=action_name, user=user)
+    if not transitions:
+        return None, None
+
+    transition = transitions[0]
+    transition = None 
+    return process, transition
