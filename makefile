@@ -56,3 +56,8 @@ test-one:
 	make migrate
 	make worker-restart
 	docker compose -p $(PROJECT_NAME) exec demo pytest $(t) 
+
+autofixer-run:
+	docker compose -p $(PROJECT_NAME) exec demo python manage.py run_autofixer --interval 5
+autofixer-status:
+	docker compose -p $(PROJECT_NAME) exec demo python manage.py autofixer_status

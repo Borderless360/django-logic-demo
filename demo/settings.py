@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'django_logic',
     'django_logic_celery',
     'django_logic_ext',
+    'autofixer',
 ]
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -112,6 +113,10 @@ LOGGING = {
             'handlers': ['file', 'clickhouse'],
             'level': logging.INFO,
         },
+        'autofixer': {
+            'handlers': ['console'],
+            'level': logging.INFO,
+        },
     },
 }
 
@@ -122,3 +127,31 @@ DJANGO_LOGIC_EXT_CLEANUP_DAYS = os.getenv('DJANGO_LOGIC_EXT_CLEANUP_DAYS', 7)
 
 
 QUEUE_TRANSITION_MAX_RETRIES = 3
+
+# ---------------------------------------------------------------------------
+# Celery Beat schedule
+# ---------------------------------------------------------------------------
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    'autofixer-tick': {
+        'task': 'autofixer.tick',
+        'schedule': 5.0,
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Autofixer configuration
+# ---------------------------------------------------------------------------
+AUTOFIXER = {
+    'LOG_SOURCE': 'clickhouse',
+    'STATS_BACKEND': 'redis',
+    'POLL_INTERVAL': 5,
+    'LOCK_TIMEOUT': 30,
+    'ANOMALY_STD_DEV_MULTIPLIER': 3.0,
+    'ANOMALY_MIN_SAMPLES': 10,
+    'STATS_WINDOW_SIZE': 1000,
+    'REDIS_KEY_PREFIX': 'autofixer',
+    'CLICKHOUSE_STATS_TABLE': 'transition_stats',
+    'STUCK_TRANSITION_SECONDS': 300,
+}

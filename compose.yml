@@ -88,3 +88,6 @@ services:
   demo-worker:
     <<: *demo
     command: celery -A demo.celery_app worker -l INFO --concurrency=4
+  # demo-beat:
+  #   <<: *demo
+  #   command: celery -A demo.celery_app beat -l INFO --scheduler django_celery_beat.schedulers.DatabaseScheduler
