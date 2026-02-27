@@ -1,44 +1,24 @@
-"""Run autofixer monitor in a loop (Mon-1: singleton process)."""
+from __future__ import annotations
 
-import logging
-import signal
-import sys
+import time
 
 from django.core.management.base import BaseCommand
 
-from autofixer.monitor import Monitor
-
-logger = logging.getLogger("autofixer")
+from autofixer.monitor import MonitoringService
 
 
 class Command(BaseCommand):
-    help = "Run autofixer monitor (polls logs, detects anomalies, runs actions)"
+    help = "Run autofixer monitor loop in foreground"
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            "--interval",
-            type=float,
-            default=5,
-            help="Poll interval in seconds (default: 5, Mon-2: near-realtime)",
-        )
+        parser.add_argument("--interval", type=int, default=5)
 
     def handle(self, *args, **options):
-        interval = options["interval"]
-        monitor = Monitor()
-        self.stdout.write(f"Autofixer running (interval={interval}s). Ctrl+C to stop.")
-        self.stdout.write("")
+        interval = int(options["interval"])
+        monitor = MonitoringService()
+        self.stdout.write(self.style.SUCCESS(f"Autofixer started. Poll interval={interval}s"))
+        while True:
+            result = monitor.tick()
+            self.stdout.write(str(result))
+            time.sleep(interval)
 
-        def on_sigterm(signum, frame):
-            logger.info("Autofixer received SIGTERM, shutting down")
-            sys.exit(0)
-
-        signal.signal(signal.SIGTERM, on_sigterm)
-
-        import time
-
-        try:
-            while True:
-                monitor.run_once()
-                time.sleep(interval)
-        except KeyboardInterrupt:
-            self.stdout.write("\nStopped.")

@@ -1,49 +1,33 @@
-"""Redis stats backend with 30-day TTL (S-2, S-3)."""
-
-from django.conf import settings
+from __future__ import annotations
 
 from autofixer.stats.base import StatsBackend
+from core.redis import redis_client
 
 
 class RedisStatsBackend(StatsBackend):
-    """Store stats in Redis with 30-day TTL."""
+    def __init__(self, *, key_prefix: str, window_size: int, ttl_seconds: int, redis=None) -> None:
+        self.key_prefix = key_prefix
+        self.window_size = int(window_size)
+        self.ttl_seconds = int(ttl_seconds)
+        self.redis = redis or redis_client
 
-    TTL_DAYS = 30
-
-    def __init__(self):
-        from core.redis import redis_client
-
-        self._redis = redis_client
-        cfg = getattr(settings, "AUTOFIXER", {})
-        self._prefix = cfg.get("REDIS_KEY_PREFIX", "autofixer")
-        self._window = int(cfg.get("STATS_WINDOW_SIZE", 1000))
-
-    def _key(self, process_class: str, action_name: str) -> str:
-        return f"{self._prefix}:stats:{process_class}:{action_name}"
-
-    def record_duration(
-        self,
-        process_class: str,
-        action_name: str,
-        duration_seconds: float,
-    ) -> None:
-        """Append duration to a sorted list, trim to window, set TTL."""
-        key = self._key(process_class, action_name)
-        pipe = self._redis.pipeline()
-        pipe.lpush(key, duration_seconds)
-        pipe.ltrim(key, 0, self._window - 1)
-        pipe.expire(key, self.TTL_DAYS * 24 * 3600)
+    def add_sample(self, metric_key: str, duration_seconds: float) -> None:
+        key = self._samples_key(metric_key)
+        pipe = self.redis.pipeline()
+        pipe.lpush(key, str(float(duration_seconds)))
+        pipe.ltrim(key, 0, self.window_size - 1)
+        pipe.expire(key, self.ttl_seconds)
         pipe.execute()
 
-    def get_stats(
-        self,
-        process_class: str,
-        action_name: str,
-        limit: int = 1000,
-    ) -> tuple[list[float], int]:
-        """Get recent durations (newest first in list)."""
-        key = self._key(process_class, action_name)
-        raw = self._redis.lrange(key, 0, limit - 1)
-        durations = [float(x) for x in raw]
-        total = self._redis.llen(key)
-        return (durations, total)
+    def get_samples(self, metric_key: str) -> list[float]:
+        values = self.redis.lrange(self._samples_key(metric_key), 0, self.window_size - 1)
+        result: list[float] = []
+        for value in values:
+            if isinstance(value, bytes):
+                value = value.decode("utf-8")
+            result.append(float(value))
+        return result
+
+    def _samples_key(self, metric_key: str) -> str:
+        return f"{self.key_prefix}:stats:{metric_key}"
+

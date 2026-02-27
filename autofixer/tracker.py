@@ -1,125 +1,154 @@
-"""
-ActiveTransition tracker (AT-1, AT-2, AT-3).
-Tracks running transitions; state in memory with Redis persistence for recovery.
-"""
+from __future__ import annotations
 
 import json
-import logging
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
-from django.conf import settings
-
-from autofixer.events import LogEvent
-
-logger = logging.getLogger("autofixer")
+from autofixer.events import EventType, TransitionCompletion, TransitionEvent
+from core.redis import redis_client
 
 
 @dataclass
-class ActiveTransition:
-    """A transition that is currently running (chain not yet complete)."""
-
+class _ActiveTransition:
     tr_id: str
     root_id: str
-    parent_id: str | None
+    parent_id: str
     process_class: str
     action_name: str
     instance_key: str
-    started_at: str  # ISO format
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "ActiveTransition":
-        return cls(**d)
+    started_at: datetime
+    current_side_effect_name: str = ""
+    current_side_effect_started_at: datetime | None = None
+    side_effect_durations: list[tuple[str, float]] = field(default_factory=list)
 
 
-class TransitionTracker:
-    """
-    Tracks active transitions. AT-1: chain active until all (root + children) complete.
-    AT-2: completed transitions are removed.
-    AT-3: state in memory, persisted to Redis for crash recovery.
-    """
+class ActiveTransitionTracker:
+    def __init__(self, *, key_prefix: str, redis=None) -> None:
+        self.key_prefix = key_prefix
+        self.redis = redis or redis_client
+        self._transitions: dict[str, _ActiveTransition] = {}
+        self._load()
 
-    REDIS_KEY_ACTIVE = "active"
-    REDIS_KEY_LAST_OFFSET = "last_offset"
-    TTL_DAYS = 1  # Keep persisted state for 1 day
-
-    def __init__(self):
-        from core.redis import redis_client
-
-        self._redis = redis_client
-        cfg = getattr(settings, "AUTOFIXER", {})
-        self._prefix = cfg.get("REDIS_KEY_PREFIX", "autofixer")
-        self._active: dict[str, ActiveTransition] = {}  # tr_id -> ActiveTransition
-        self._roots: dict[str, set[str]] = {}  # root_id -> set of tr_ids in chain
-        self._load_from_redis()
-
-    def _key(self, *parts: str) -> str:
-        return ":".join([self._prefix, "tracker"] + list(parts))
-
-    def _load_from_redis(self) -> None:
-        """Restore state from Redis after crash (AT-3)."""
-        try:
-            data = self._redis.get(self._key(self.REDIS_KEY_ACTIVE))
-            if data:
-                payload = json.loads(data)
-                for tr_id, d in payload.get("active", {}).items():
-                    self._active[tr_id] = ActiveTransition.from_dict(d)
-                for root_id, tr_ids in payload.get("roots", {}).items():
-                    self._roots[root_id] = set(tr_ids)
-                logger.info("Restored %d active transitions from Redis", len(self._active))
-        except Exception as e:
-            logger.warning("Failed to restore from Redis: %s", e)
-
-    def _save_to_redis(self) -> None:
-        """Persist state to Redis (AT-3)."""
-        try:
-            payload = {
-                "active": {tid: t.to_dict() for tid, t in self._active.items()},
-                "roots": {rid: list(tr_ids) for rid, tr_ids in self._roots.items()},
-            }
-            key = self._key(self.REDIS_KEY_ACTIVE)
-            self._redis.set(key, json.dumps(payload), ex=self.TTL_DAYS * 24 * 3600)
-        except Exception as e:
-            logger.warning("Failed to persist to Redis: %s", e)
-
-    def process_event(self, event: LogEvent, started_at: datetime | None = None) -> None:
-        """Process a log event: add on Start, remove on Unlock/Fail when chain complete."""
-        if event.is_start:
+    def apply(self, event: TransitionEvent) -> TransitionCompletion | None:
+        if event.event_type == EventType.START:
             root_id = event.root_id or event.tr_id
-            parent_id = event.parent_id
-            t = ActiveTransition(
+            self._transitions[event.tr_id] = _ActiveTransition(
                 tr_id=event.tr_id,
                 root_id=root_id,
-                parent_id=parent_id,
-                process_class=event.process_class or "",
-                action_name=event.action_name or "",
-                instance_key=event.instance_key or "",
-                started_at=(started_at or datetime.utcnow()).strftime("%Y-%m-%dT%H:%M:%S"),
+                parent_id=event.parent_id,
+                process_class=event.process_class,
+                action_name=event.action_name,
+                instance_key=event.instance_key,
+                started_at=event.timestamp,
             )
-            self._active[event.tr_id] = t
-            if root_id not in self._roots:
-                self._roots[root_id] = set()
-            self._roots[root_id].add(event.tr_id)
-        elif event.is_complete:
-            self._mark_complete(event.tr_id)
-        self._save_to_redis()
+            self._save()
+            return None
 
-    def _mark_complete(self, tr_id: str) -> None:
-        """Mark transition complete and remove if whole chain is done (AT-2)."""
-        if tr_id not in self._active:
+        active = self._transitions.get(event.tr_id)
+        if not active:
+            return None
+
+        if event.event_type == EventType.SIDE_EFFECT and event.name:
+            self._finish_current_side_effect(active, event.timestamp)
+            active.current_side_effect_name = event.name
+            active.current_side_effect_started_at = event.timestamp
+            self._save()
+            return None
+
+        if event.event_type in (EventType.UNLOCK, EventType.FAIL):
+            self._finish_current_side_effect(active, event.timestamp)
+            completion = TransitionCompletion(
+                tr_id=active.tr_id,
+                root_id=active.root_id,
+                process_class=active.process_class,
+                action_name=active.action_name,
+                duration_seconds=max((event.timestamp - active.started_at).total_seconds(), 0.0),
+                completed_at=event.timestamp,
+                side_effect_durations=list(active.side_effect_durations),
+            )
+            del self._transitions[event.tr_id]
+            self._save()
+            return completion
+
+        return None
+
+    def get_active(self) -> list[dict]:
+        rows: list[dict] = []
+        for item in self._transitions.values():
+            rows.append(
+                {
+                    "tr_id": item.tr_id,
+                    "root_id": item.root_id,
+                    "parent_id": item.parent_id,
+                    "process_class": item.process_class,
+                    "action_name": item.action_name,
+                    "instance_key": item.instance_key,
+                    "started_at": item.started_at.isoformat(),
+                    "current_side_effect": item.current_side_effect_name,
+                }
+            )
+        rows.sort(key=lambda value: value["started_at"])
+        return rows
+
+    def get_active_roots(self) -> list[dict]:
+        counts: dict[str, int] = {}
+        for item in self._transitions.values():
+            counts[item.root_id] = counts.get(item.root_id, 0) + 1
+        rows = [{"root_id": root_id, "active_children": count} for root_id, count in counts.items()]
+        rows.sort(key=lambda value: value["root_id"])
+        return rows
+
+    def _finish_current_side_effect(self, active: _ActiveTransition, completed_at: datetime) -> None:
+        if not active.current_side_effect_name or active.current_side_effect_started_at is None:
             return
-        t = self._active[tr_id]
-        root_id = t.root_id
-        self._roots[root_id].discard(tr_id)
-        del self._active[tr_id]
+        duration = max((completed_at - active.current_side_effect_started_at).total_seconds(), 0.0)
+        active.side_effect_durations.append((active.current_side_effect_name, duration))
+        active.current_side_effect_name = ""
+        active.current_side_effect_started_at = None
 
-        # If root has no more active transitions, we're done
-        if not self._roots[root_id]:
-            del self._roots[root_id]
+    def _storage_key(self) -> str:
+        return f"{self.key_prefix}:active"
 
-    def get_active(self) -> list[ActiveTransition]:
-        """Return all active transitions (for UA-1: user can view at any time)."""
-        return list(self._active.values())
+    def _save(self) -> None:
+        payload = []
+        for item in self._transitions.values():
+            payload.append(
+                {
+                    "tr_id": item.tr_id,
+                    "root_id": item.root_id,
+                    "parent_id": item.parent_id,
+                    "process_class": item.process_class,
+                    "action_name": item.action_name,
+                    "instance_key": item.instance_key,
+                    "started_at": item.started_at.isoformat(),
+                    "current_side_effect_name": item.current_side_effect_name,
+                    "current_side_effect_started_at": item.current_side_effect_started_at.isoformat()
+                    if item.current_side_effect_started_at
+                    else None,
+                    "side_effect_durations": item.side_effect_durations,
+                }
+            )
+        self.redis.set(self._storage_key(), json.dumps(payload))
+
+    def _load(self) -> None:
+        raw = self.redis.get(self._storage_key())
+        if not raw:
+            return
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        payload = json.loads(raw)
+        for row in payload:
+            current_started = row.get("current_side_effect_started_at")
+            self._transitions[row["tr_id"]] = _ActiveTransition(
+                tr_id=row["tr_id"],
+                root_id=row["root_id"],
+                parent_id=row.get("parent_id", ""),
+                process_class=row.get("process_class", ""),
+                action_name=row.get("action_name", ""),
+                instance_key=row.get("instance_key", ""),
+                started_at=datetime.fromisoformat(row["started_at"]),
+                current_side_effect_name=row.get("current_side_effect_name", ""),
+                current_side_effect_started_at=datetime.fromisoformat(current_started) if current_started else None,
+                side_effect_durations=[tuple(item) for item in row.get("side_effect_durations", [])],
+            )
+

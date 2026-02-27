@@ -1,1 +1,2 @@
-"""Django Logic Monitoring: finds anomalies and executes actions."""
+default_app_config = "autofixer.apps.AutofixerConfig"
+

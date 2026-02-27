@@ -1,14 +1,11 @@
-"""Abstract alert action (Action-1, Action-2)."""
+from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from typing import Protocol
 
-from autofixer.detector import Anomaly
+from autofixer.events import Anomaly
 
 
-class AlertAction(ABC):
-    """Base for actions: email (Action-1), webhook (Action-2)."""
+class AlertAction(Protocol):
+    def send(self, *, anomaly: Anomaly, config: dict) -> None:
+        raise NotImplementedError
 
-    @abstractmethod
-    def execute(self, anomaly: Anomaly) -> None:
-        """Execute the action for the given anomaly."""
-        ...

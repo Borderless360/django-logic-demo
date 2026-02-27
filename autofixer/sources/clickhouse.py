@@ -1,49 +1,27 @@
-"""ClickHouse log source (SRC-2: default source)."""
+from __future__ import annotations
 
 from datetime import datetime
-from typing import Iterator
 
-from django.conf import settings
-
-from autofixer.sources.base import LogSource
+from clickhouse.client import client
 
 
-class ClickHouseSource(LogSource):
-    """Fetch django-logic logs from ClickHouse."""
-
-    def __init__(self):
-        from clickhouse.client import client
-
-        self._client = client
-        self._table = getattr(
-            settings,
-            "AUTOFIXER_CLICKHOUSE_TABLE",
-            "logs",
-        )
-
-    def fetch_logs(
-        self,
-        since: datetime | None = None,
-        limit: int = 10000,
-    ) -> Iterator[tuple[datetime, str]]:
-        """Fetch logs from ClickHouse, ordered by _timestamp."""
-        # Build query (since is from our code, formatted safely)
-        where = "name = 'django-logic.transition'"
-        if since:
-            ts = since.strftime("%Y-%m-%d %H:%M:%S")
-            where += f" AND _timestamp >= '{ts}'"
+class ClickHouseSource:
+    def fetch_logs(self, *, since: datetime | None, limit: int = 5000) -> list[dict]:
+        where_parts = ["name = 'django-logic.transition'"]
+        if since is not None:
+            since_str = since.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            where_parts.append(f"_timestamp > toDateTime64('{since_str}', 3)")
+        where_sql = " AND ".join(where_parts)
         query = f"""
-            SELECT _timestamp, message
-            FROM {self._table}
-            WHERE {where}
-            ORDER BY _timestamp ASC, created ASC
-            LIMIT {min(limit, 10000)}
+            SELECT message, _timestamp
+            FROM logs
+            WHERE {where_sql}
+            ORDER BY _timestamp ASC
+            LIMIT {int(limit)}
         """
-        result = self._client.query(query)
+        result = client.query(query)
         if not result.result_rows:
-            return
+            return []
+        names = result.column_names
+        return [dict(zip(names, row)) for row in result.result_rows]
 
-        for row in result.result_rows:
-            ts, msg = row[0], row[1]
-            if msg:
-                yield (ts, msg)

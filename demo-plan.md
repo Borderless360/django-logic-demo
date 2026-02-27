@@ -45,3 +45,10 @@ https://github.com/madebyaris/spec-kit-command-cursor/tree/main
 gpt-5.3-codex - 0.03$ but bad result
 composer-1.5 - 0.02$ bad also, but better then gpt-5.3-codex
 claude-4.6-opus-high-thinking - 0.18$ good result
+
+gpt-5.3-codex  - found code into git tree and restore it instead of create a new one
+
+One more reason to stay on 2 steps before edge.
+Generate result with diff LLM and compile the best mix version.
+
+They all is working.

@@ -1,27 +1,12 @@
-"""Abstract stats backend (S-1, S-2)."""
+from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from typing import Protocol
 
 
-class StatsBackend(ABC):
-    """Store execution duration stats for transitions/actions (S-1)."""
+class StatsBackend(Protocol):
+    def add_sample(self, metric_key: str, duration_seconds: float) -> None:
+        raise NotImplementedError
 
-    @abstractmethod
-    def record_duration(
-        self,
-        process_class: str,
-        action_name: str,
-        duration_seconds: float,
-    ) -> None:
-        """Record a single execution duration."""
-        ...
+    def get_samples(self, metric_key: str) -> list[float]:
+        raise NotImplementedError
 
-    @abstractmethod
-    def get_stats(
-        self,
-        process_class: str,
-        action_name: str,
-        limit: int = 1000,
-    ) -> tuple[list[float], int]:
-        """Get recent durations. Returns (list of durations, total count)."""
-        ...

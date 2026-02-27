@@ -41,6 +41,7 @@ testpaths = [
     "abstract/e2e",
     "locker/e2e",
     "invoice/e2e",
+    "autofixer/tests",
 ]
 python_files = ["test_*.py", ]
 DJANGO_SETTINGS_MODULE = "demo.settings"

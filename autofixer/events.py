@@ -1,141 +1,126 @@
-"""Parse django-logic transition log events from message strings."""
+from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
-from uuid import UUID
+from enum import Enum
 
 
-@dataclass
-class LogEvent:
-    """Parsed log event from django-logic transition logger."""
+class EventType(str, Enum):
+    START = "Start"
+    UNLOCK = "Unlock"
+    FAIL = "Fail"
+    SIDE_EFFECT = "SideEffect"
+    CALLBACK = "Callback"
+    FAILURE_SIDE_EFFECT = "FailureSideEffect"
+    SET_STATE = "Set State"
+    UNKNOWN = "Unknown"
 
+
+@dataclass(frozen=True)
+class TransitionEvent:
     tr_id: str
-    event_type: str  # Start, Set State, Lock, Unlock, Fail, SideEffect, etc.
-    raw_message: str
-    timestamp: Optional[datetime] = None
-    # Start-specific
-    process_class: Optional[str] = None
-    action_name: Optional[str] = None
-    instance_key: Optional[str] = None
-    root_id: Optional[str] = None
-    parent_id: Optional[str] = None
-    # Set State-specific
-    state: Optional[str] = None
-    # Fail-specific
-    error_type: Optional[str] = None
-    error_message: Optional[str] = None
-
-    @property
-    def is_start(self) -> bool:
-        return self.event_type == "Start"
-
-    @property
-    def is_complete(self) -> bool:
-        """Transition finished: Unlock (success) or Fail (error)."""
-        return self.event_type in ("Unlock", "Fail")
-
-    @property
-    def is_failure(self) -> bool:
-        return self.event_type == "Fail"
+    event_type: EventType
+    timestamp: datetime
+    process_class: str = ""
+    action_name: str = ""
+    instance_key: str = ""
+    root_id: str = ""
+    parent_id: str = ""
+    name: str = ""
+    raw_message: str = ""
 
 
-# Patterns for django-logic log messages (message LIKE '{tr_id} %')
-# Start: {tr_id} Start {process_class} {action_name} {instance_key} {root_id} {parent_id}
-# Unlock: {tr_id} Unlock
-# Fail: {tr_id} Fail: {ExceptionType}: {message}
-# Set State: {tr_id} Set State {state}
-# SideEffect: {tr_id} SideEffect {function_name}
-# etc.
-
-START_RE = re.compile(
-    r"^([a-f0-9-]{36})\s+Start\s+(\S+)\s+(\S+)\s+(\S+)\s+([a-f0-9-]{36}|None)\s+([a-f0-9-]{36}|None)\s*$",
-    re.IGNORECASE,
-)
-UNLOCK_RE = re.compile(r"^([a-f0-9-]{36})\s+Unlock\s*$", re.IGNORECASE)
-FAIL_RE = re.compile(
-    r"^([a-f0-9-]{36})\s+Fail:\s+(.+?):\s+(.*)$",
-    re.DOTALL,
-)
-SET_STATE_RE = re.compile(
-    r"^([a-f0-9-]{36})\s+Set State\s+(.+?)\s*$",
-)
+@dataclass(frozen=True)
+class TransitionCompletion:
+    tr_id: str
+    root_id: str
+    process_class: str
+    action_name: str
+    duration_seconds: float
+    completed_at: datetime
+    side_effect_durations: list[tuple[str, float]]
 
 
-def parse_event(message: str, timestamp: Optional[datetime] = None) -> Optional[LogEvent]:
-    """Parse a log message into a LogEvent, or None if not a transition log."""
-    if not message or not message.strip():
+@dataclass(frozen=True)
+class Anomaly:
+    kind: str
+    metric_key: str
+    observed: float
+    mean: float
+    std_dev: float
+    threshold: float
+    fingerprint: str
+    details: dict
+
+
+def parse_log_row(row: dict) -> TransitionEvent | None:
+    message = (row.get("message") or "").strip()
+    if not message:
         return None
 
-    parts = message.split(None, 2)
-    if len(parts) < 2:
+    tokens = message.split()
+    if len(tokens) < 2:
         return None
 
-    tr_id, suffix = parts[0], (parts[2] if len(parts) > 2 else "")
-
-    # Validate tr_id looks like UUID
-    try:
-        UUID(tr_id)
-    except (ValueError, TypeError):
+    timestamp = row.get("_timestamp") or row.get("created")
+    if timestamp is None:
         return None
 
-    # Start
-    m = START_RE.match(message)
-    if m:
-        return LogEvent(
-            tr_id=m.group(1),
-            event_type="Start",
-            raw_message=message,
-            timestamp=timestamp,
-            process_class=m.group(2),
-            action_name=m.group(3),
-            instance_key=m.group(4),
-            root_id=m.group(5) if m.group(5) != "None" else None,
-            parent_id=m.group(6) if m.group(6) != "None" else None,
-        )
+    tr_id = tokens[0]
+    second = tokens[1]
+    event_type = _parse_event_type(tokens)
+    event_name = ""
+    process_class = ""
+    action_name = ""
+    instance_key = ""
+    root_id = ""
+    parent_id = ""
 
-    # Unlock
-    m = UNLOCK_RE.match(message)
-    if m:
-        return LogEvent(
-            tr_id=m.group(1),
-            event_type="Unlock",
-            raw_message=message,
-            timestamp=timestamp,
-        )
+    if event_type == EventType.START and len(tokens) >= 7:
+        process_class = tokens[2]
+        action_name = tokens[3]
+        instance_key = tokens[4]
+        root_id = tokens[5]
+        parent_id = tokens[6]
+    elif event_type in (EventType.SIDE_EFFECT, EventType.CALLBACK, EventType.FAILURE_SIDE_EFFECT):
+        if len(tokens) >= 3:
+            event_name = tokens[2]
+    elif event_type == EventType.SET_STATE and len(tokens) >= 4:
+        event_name = " ".join(tokens[3:])
+    elif event_type == EventType.FAIL:
+        event_name = second.rstrip(":")
 
-    # Fail
-    m = FAIL_RE.match(message)
-    if m:
-        return LogEvent(
-            tr_id=m.group(1),
-            event_type="Fail",
-            raw_message=message,
-            timestamp=timestamp,
-            error_type=m.group(2).strip(),
-            error_message=m.group(3).strip() if len(m.group(3)) else "",
-        )
+    return TransitionEvent(
+        tr_id=tr_id,
+        event_type=event_type,
+        timestamp=timestamp,
+        process_class=process_class,
+        action_name=action_name,
+        instance_key=instance_key,
+        root_id=root_id,
+        parent_id=parent_id,
+        name=event_name,
+        raw_message=message,
+    )
 
-    # Set State
-    m = SET_STATE_RE.match(message)
-    if m:
-        return LogEvent(
-            tr_id=m.group(1),
-            event_type="Set State",
-            raw_message=message,
-            timestamp=timestamp,
-            state=m.group(2).strip(),
-        )
 
-    # Generic: tr_id + event_type (Lock, SideEffect, Callback, etc.)
-    event_type = parts[1] if len(parts) >= 2 else ""
-    if event_type in ("Lock", "SideEffect", "Callback", "FailureSideEffect", "Background Mode", "Next Transition"):
-        return LogEvent(
-            tr_id=tr_id,
-            event_type=event_type,
-            raw_message=message,
-            timestamp=timestamp,
-        )
+def _parse_event_type(tokens: list[str]) -> EventType:
+    if len(tokens) < 2:
+        return EventType.UNKNOWN
+    second = tokens[1]
+    if second == "Start":
+        return EventType.START
+    if second == "Unlock":
+        return EventType.UNLOCK
+    if second.startswith("Fail"):
+        return EventType.FAIL
+    if second == "SideEffect":
+        return EventType.SIDE_EFFECT
+    if second == "Callback":
+        return EventType.CALLBACK
+    if second == "FailureSideEffect":
+        return EventType.FAILURE_SIDE_EFFECT
+    if len(tokens) > 2 and second == "Set" and tokens[2] == "State":
+        return EventType.SET_STATE
+    return EventType.UNKNOWN
 
-    return None

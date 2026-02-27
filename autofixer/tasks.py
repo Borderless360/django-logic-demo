@@ -1,23 +1,17 @@
-"""Celery task for autofixer tick (Mon-1, Mon-3)."""
+from __future__ import annotations
 
 import logging
 
 from celery import shared_task
 
-from autofixer.monitor import Monitor
+from autofixer.monitor import get_monitor
 
 logger = logging.getLogger("autofixer")
 
 
-@shared_task(name="autofixer.tick")
-def tick():
-    """
-    Celery beat task: run one monitor poll.
-    Mon-3: Celery will auto-restart on crash.
-    """
-    try:
-        monitor = Monitor()
-        monitor.run_once()
-    except Exception as e:
-        logger.exception("Autofixer tick failed: %s", e)
-        raise
+@shared_task(name="autofixer.tick", autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 5})
+def tick() -> dict:
+    result = get_monitor().tick()
+    logger.info("Autofixer tick result: %s", result)
+    return result
+

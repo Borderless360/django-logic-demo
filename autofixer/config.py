@@ -1,89 +1,50 @@
-"""
-ActionConfig (AC-1, AC-2, AC-3): actions configured in django settings.
-One anomaly can trigger multiple actions; each action runs only once per anomaly.
-"""
+from __future__ import annotations
 
-import logging
+from dataclasses import dataclass
+
 from django.conf import settings
 
-from autofixer.alerts.base import AlertAction
-from autofixer.alerts.email import EmailAlert
-from autofixer.alerts.webhook import WebhookAlert
-from autofixer.detector import Anomaly
 
-logger = logging.getLogger("autofixer")
-
-
-def get_action_config() -> list[tuple[str, list[AlertAction]]]:
-    """
-    Load ActionConfig from settings (AC-1).
-    Returns list of (anomaly_key, [actions]) where anomaly_key = process_class:action_name.
-    AC-2: multiple actions per anomaly.
-    """
-    cfg = getattr(settings, "AUTOFIXER", {})
-    action_config = cfg.get("ACTION_CONFIG", [])
-    result: list[tuple[str, list[AlertAction]]] = []
-
-    for item in action_config:
-        pattern = item.get("pattern", "*:*")  # process_class:action_name or * for wildcard
-        actions_cfg = item.get("actions", [])
-        actions: list[AlertAction] = []
-        for a in actions_cfg:
-            if a.get("type") == "email":
-                actions.append(
-                    EmailAlert(
-                        recipients=a.get("recipients", []),
-                        subject_prefix=a.get("subject_prefix", "[Autofixer]"),
-                    )
-                )
-            elif a.get("type") == "webhook":
-                actions.append(
-                    WebhookAlert(
-                        url=a.get("url", ""),
-                        method=a.get("method", "POST"),
-                        headers=a.get("headers"),
-                    )
-                )
-        if actions:
-            result.append((pattern, actions))
-    return result
+@dataclass(frozen=True)
+class AutofixerSettings:
+    log_source: str
+    stats_backend: str
+    poll_interval: int
+    lock_timeout: int
+    anomaly_std_dev_multiplier: float
+    anomaly_min_samples: int
+    stats_window_size: int
+    redis_key_prefix: str
+    stuck_transition_seconds: int
+    action_config: list[dict]
 
 
-def anomaly_key(process_class: str, action_name: str) -> str:
-    return f"{process_class}:{action_name}"
+DEFAULTS = {
+    "LOG_SOURCE": "clickhouse",
+    "STATS_BACKEND": "redis",
+    "POLL_INTERVAL": 5,
+    "LOCK_TIMEOUT": 30,
+    "ANOMALY_STD_DEV_MULTIPLIER": 2.0,
+    "ANOMALY_MIN_SAMPLES": 5,
+    "STATS_WINDOW_SIZE": 1000,
+    "REDIS_KEY_PREFIX": "autofixer",
+    "STUCK_TRANSITION_SECONDS": 300,
+    "ACTION_CONFIG": [],
+}
 
 
-def matches_pattern(pattern: str, process_class: str, action_name: str) -> bool:
-    """Check if process_class:action_name matches pattern (supports * wildcard)."""
-    key = anomaly_key(process_class, action_name)
-    if "*" in pattern:
-        parts = pattern.split(":")
-        pc_pat = parts[0] if len(parts) > 0 else "*"
-        ac_pat = parts[1] if len(parts) > 1 else "*"
-        if pc_pat != "*" and pc_pat != process_class:
-            return False
-        if ac_pat != "*" and ac_pat != action_name:
-            return False
-        return True
-    return key == pattern
+def get_autofixer_settings() -> AutofixerSettings:
+    raw = {**DEFAULTS, **getattr(settings, "AUTOFIXER", {})}
+    return AutofixerSettings(
+        log_source=raw["LOG_SOURCE"],
+        stats_backend=raw["STATS_BACKEND"],
+        poll_interval=int(raw["POLL_INTERVAL"]),
+        lock_timeout=int(raw["LOCK_TIMEOUT"]),
+        anomaly_std_dev_multiplier=float(raw["ANOMALY_STD_DEV_MULTIPLIER"]),
+        anomaly_min_samples=int(raw["ANOMALY_MIN_SAMPLES"]),
+        stats_window_size=int(raw["STATS_WINDOW_SIZE"]),
+        redis_key_prefix=str(raw["REDIS_KEY_PREFIX"]),
+        stuck_transition_seconds=int(raw["STUCK_TRANSITION_SECONDS"]),
+        action_config=list(raw.get("ACTION_CONFIG", [])),
+    )
 
-
-def run_actions(anomaly: Anomaly, already_fired: set[str]) -> None:
-    """
-    Run configured actions for anomaly (AC-3: each action once per anomaly).
-    already_fired: set of anomaly keys we've already acted on (idempotent per detection run).
-    """
-    key = anomaly_key(anomaly.process_class, anomaly.action_name)
-    if key in already_fired:
-        return
-
-    config = get_action_config()
-    for pattern, actions in config:
-        if matches_pattern(pattern, anomaly.process_class, anomaly.action_name):
-            for action in actions:
-                try:
-                    action.execute(anomaly)
-                except Exception as e:
-                    logger.exception("Action failed: %s", e)
-            already_fired.add(key)
-            break

@@ -1,72 +1,31 @@
-"""
-Anomaly detector (Anom-1): long execution based on past stats.
-Deviation > 2σ from mean, minimum 5 records.
-"""
+from __future__ import annotations
 
-import math
-from dataclasses import dataclass
+from statistics import mean, pstdev
 
-from django.conf import settings
-
-from autofixer.stats.base import StatsBackend
-
-
-@dataclass
-class Anomaly:
-    """Detected anomaly."""
-
-    process_class: str
-    action_name: str
-    duration_seconds: float
-    mean: float
-    std: float
-    sample_count: int
-    threshold: float  # mean + multiplier * std
+from autofixer.events import Anomaly
 
 
 class AnomalyDetector:
-    """
-    Detect anomalies: execution time > 2σ from mean (Anom-1).
-    Requires at least 5 samples.
-    """
+    def __init__(self, *, std_dev_multiplier: float, min_samples: int) -> None:
+        self.std_dev_multiplier = float(std_dev_multiplier)
+        self.min_samples = int(min_samples)
 
-    def __init__(self, stats: StatsBackend):
-        self._stats = stats
-        cfg = getattr(settings, "AUTOFIXER", {})
-        self._multiplier = float(cfg.get("ANOMALY_STD_DEV_MULTIPLIER", 2.0))
-        self._min_samples = int(cfg.get("ANOMALY_MIN_SAMPLES", 5))
-
-    def check(
-        self,
-        process_class: str,
-        action_name: str,
-        duration_seconds: float,
-    ) -> Anomaly | None:
-        """
-        Check if duration is anomalous.
-        Returns Anomaly if anomaly detected, else None.
-        """
-        durations, total = self._stats.get_stats(process_class, action_name)
-        if total < self._min_samples:
+    def detect(self, *, kind: str, metric_key: str, observed: float, samples: list[float], fingerprint: str, details: dict) -> Anomaly | None:
+        if len(samples) < self.min_samples:
             return None
-
-        n = len(durations)
-        if n == 0:
+        avg = mean(samples)
+        std = pstdev(samples)
+        threshold = avg + (self.std_dev_multiplier * std)
+        if observed <= threshold:
             return None
+        return Anomaly(
+            kind=kind,
+            metric_key=metric_key,
+            observed=observed,
+            mean=avg,
+            std_dev=std,
+            threshold=threshold,
+            fingerprint=fingerprint,
+            details=details,
+        )
 
-        mean = sum(durations) / n
-        variance = sum((x - mean) ** 2 for x in durations) / n
-        std = math.sqrt(variance) if variance > 0 else 0.0
-        threshold = mean + self._multiplier * std
-
-        if duration_seconds > threshold:
-            return Anomaly(
-                process_class=process_class,
-                action_name=action_name,
-                duration_seconds=duration_seconds,
-                mean=mean,
-                std=std,
-                sample_count=total,
-                threshold=threshold,
-            )
-        return None

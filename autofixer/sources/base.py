@@ -1,23 +1,10 @@
-"""Abstract log source interface."""
+from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Iterator
-
-from autofixer.events import LogEvent
+from typing import Protocol
 
 
-class LogSource(ABC):
-    """Abstract source of django-logic transition logs (SRC-1)."""
+class LogSource(Protocol):
+    def fetch_logs(self, *, since: datetime | None, limit: int = 5000) -> list[dict]:
+        raise NotImplementedError
 
-    @abstractmethod
-    def fetch_logs(
-        self,
-        since: datetime | None = None,
-        limit: int = 10000,
-    ) -> Iterator[tuple[datetime, str]]:
-        """
-        Fetch logs since the given timestamp.
-        Yields (timestamp, message) tuples.
-        """
-        ...

@@ -1,44 +1,30 @@
-"""Webhook alert action (Action-2)."""
+from __future__ import annotations
 
-import json
 import logging
 
 import requests
 
-from autofixer.alerts.base import AlertAction
-from autofixer.detector import Anomaly
+from autofixer.events import Anomaly
 
 logger = logging.getLogger("autofixer")
 
 
-class WebhookAlert(AlertAction):
-    """Call HTTP webhook on anomaly."""
-
-    def __init__(self, url: str, method: str = "POST", headers: dict | None = None):
-        self.url = url
-        self.method = method.upper()
-        self.headers = headers or {"Content-Type": "application/json"}
-
-    def execute(self, anomaly: Anomaly) -> None:
+class WebhookAlert:
+    def send(self, *, anomaly: Anomaly, config: dict) -> None:
+        url = config.get("url")
+        if not url:
+            return
+        timeout = float(config.get("timeout", 5))
         payload = {
-            "anomaly": True,
-            "process_class": anomaly.process_class,
-            "action_name": anomaly.action_name,
-            "duration_seconds": anomaly.duration_seconds,
+            "kind": anomaly.kind,
+            "metric_key": anomaly.metric_key,
+            "observed": anomaly.observed,
             "mean": anomaly.mean,
-            "std": anomaly.std,
+            "std_dev": anomaly.std_dev,
             "threshold": anomaly.threshold,
-            "sample_count": anomaly.sample_count,
+            "details": anomaly.details,
         }
-        try:
-            resp = requests.request(
-                method=self.method,
-                url=self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                timeout=10,
-            )
-            resp.raise_for_status()
-            logger.info("Webhook called: %s %s", self.method, self.url)
-        except Exception as e:
-            logger.exception("Webhook call failed: %s", e)
+        response = requests.post(url, json=payload, timeout=timeout)
+        response.raise_for_status()
+        logger.info("Webhook alert sent for %s", anomaly.metric_key)
+
