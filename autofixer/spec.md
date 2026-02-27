@@ -1,48 +1,48 @@
 # Django Logic Monitoring
-Мониторинг логов `django-logic`: находит аномалии и выполняет действия
-в ответ на найденные аномалии
+Monitoring `django-logic` logs: detects anomalies and performs actions
+in response to detected anomalies
 
 ## Data Flow
 Source → ActiveTransition → Stats → Anomaly → ActionConfig → Action
 
 ## Entities
 
-**Source** — источник логов `django-logic`
-- SRC-1: источники могут быть разные
-- SRC-2: источник по умолчанию — ClickHouse
+**Source** — source of `django-logic` logs
+- SRC-1: sources may vary
+- SRC-2: default source is ClickHouse
 
-**ActiveTransition** — состояние работающего транзишена
-- AT-1: Транзишен активен, пока не завершена вся цепочка (включая дочерние)
-- AT-2: Завершенные транзишены (с ошибкой или без) удаляются из списка
-- AT-3: Состояния хранятся в памяти, но в случае сбоя должны восстанавливаться из Redis.
+**ActiveTransition** — state of a running transition
+- AT-1: A transition is active until the whole chain is completed (including child transitions)
+- AT-2: Completed transitions (with or without errors) are removed from the list
+- AT-3: States are stored in memory, but in case of failure they must be restored from Redis.
 
-**Stats** — статистика времени выполнения
-- S-1: собирается для actions/transitions и их side effects
-- S-2: хранится в Redis
-- S-3: TTL хранения — 30 дней
+**Stats** — execution time statistics
+- S-1: collected for actions/transitions and their side effects
+- S-2: stored in Redis
+- S-3: storage TTL is 30 days
 
-**Anomaly** — алгоритм обнаружения аномалий
-- Anom-1: долгое выполнение на основе статистики прошлых запусков,
-    отклонение > 2σ от среднего, минимум 5 записей
+**Anomaly** — anomaly detection algorithm
+- Anom-1: long execution based on statistics of previous runs,
+    deviation > 2σ from the mean, minimum 5 records
 
-**Action** — выполняемое действие
-- Action-1: отправка почты
-- Action-2: вызов api/webhook
+**Action** — executed action
+- Action-1: send email
+- Action-2: call API/webhook
 
-**ActionConfig** — настройка действий на определённые аномалии
-- AC-1: настраивается в django settings
-- AC-2: на одну аномалию можно настроить много действий
-- AC-3: действие выполняется только один раз при обнаружании аномалии
+**ActionConfig** — action configuration for specific anomalies
+- AC-1: configured in Django settings
+- AC-2: multiple actions can be configured for one anomaly
+- AC-3: an action is executed only once when an anomaly is detected
 
-**Monitoring** — процесс выполняющий мониторинг
-- Mon-1: Singleton-процесс прослушивания в отдельно запускаемой задаче
-- Mon-2: Прослушивание логов в near-realtime (задержка до 5 сек)
-- Mon-3: Автовосстановление после падения (перезапуск таска)
+**Monitoring** — process that performs monitoring
+- Mon-1: singleton listener process in a separately launched task
+- Mon-2: log listening in near-real-time (up to 5 sec delay)
+- Mon-3: auto-recovery after failure (task restart)
 
 ## Constraints
-- Django 4.2+, Python 3.12+, Celery
-- Не должен блокировать основное Django-приложение
-- Все должно быть покрыто тестами использую pytest.
+- Python 3.12+, Django 4.2+, Celery
+- Must not block the main Django application
+- Everything must be covered by tests using pytest.
 
 ## User action
-- UA-1: в любой момент может просмотреть активные транзишены
+- UA-1: can view active transitions at any time
