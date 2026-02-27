@@ -1,70 +1,49 @@
-import logging
-from datetime import datetime, timezone
+"""ClickHouse log source (SRC-2: default source)."""
 
-from autofixer.events import TransitionEvent, parse_log_message
-from autofixer.sources.base import BaseLogSource
+from datetime import datetime
+from typing import Iterator
 
-logger = logging.getLogger('autofixer')
+from django.conf import settings
+
+from autofixer.sources.base import LogSource
 
 
-class ClickHouseLogSource(BaseLogSource):
-    """Reads django-logic.transition logs from the ClickHouse ``logs`` table."""
-
-    LOGGER_NAME = 'django-logic.transition'
+class ClickHouseSource(LogSource):
+    """Fetch django-logic logs from ClickHouse."""
 
     def __init__(self):
         from clickhouse.client import client
+
         self._client = client
-
-    def fetch_events(
-        self, since: datetime, limit: int = 1000
-    ) -> list[TransitionEvent]:
-        query = (
-            "SELECT message, created, _timestamp "
-            "FROM logs "
-            "WHERE name = {logger_name:String} "
-            "  AND _timestamp > {since:DateTime64(3)} "
-            "ORDER BY _timestamp ASC "
-            "LIMIT {limit:UInt32}"
+        self._table = getattr(
+            settings,
+            "AUTOFIXER_CLICKHOUSE_TABLE",
+            "logs",
         )
-        params = {
-            'logger_name': self.LOGGER_NAME,
-            'since': since,
-            'limit': limit,
-        }
-        try:
-            result = self._client.query(query, parameters=params)
-        except Exception:
-            logger.exception('Failed to fetch logs from ClickHouse')
-            return []
 
-        events: list[TransitionEvent] = []
+    def fetch_logs(
+        self,
+        since: datetime | None = None,
+        limit: int = 10000,
+    ) -> Iterator[tuple[datetime, str]]:
+        """Fetch logs from ClickHouse, ordered by _timestamp."""
+        # Build query (since is from our code, formatted safely)
+        where = "name = 'django-logic.transition'"
+        if since:
+            ts = since.strftime("%Y-%m-%d %H:%M:%S")
+            where += f" AND _timestamp >= '{ts}'"
+        query = f"""
+            SELECT _timestamp, message
+            FROM {self._table}
+            WHERE {where}
+            ORDER BY _timestamp ASC, created ASC
+            LIMIT {min(limit, 10000)}
+        """
+        result = self._client.query(query)
+        if not result.result_rows:
+            return
+
         for row in result.result_rows:
-            message, created, _timestamp = row
-            ts = created if created else _timestamp
-            if ts and ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            event = parse_log_message(message, ts)
-            if event is not None:
-                events.append(event)
-        return events
-
-    def get_latest_timestamp(self) -> datetime | None:
-        query = (
-            "SELECT max(_timestamp) "
-            "FROM logs "
-            "WHERE name = {logger_name:String}"
-        )
-        try:
-            result = self._client.query(
-                query, parameters={'logger_name': self.LOGGER_NAME}
-            )
-            row = result.result_rows
-            if row and row[0][0]:
-                ts = row[0][0]
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-                return ts
-        except Exception:
-            logger.exception('Failed to get latest timestamp from ClickHouse')
-        return None
+            ts, msg = row[0], row[1]
+            if msg:
+                yield (ts, msg)

@@ -1,4 +1,4 @@
-from autofixer.sources.base import BaseLogSource
-from autofixer.sources.clickhouse import ClickHouseLogSource
+from autofixer.sources.base import LogSource
+from autofixer.sources.clickhouse import ClickHouseSource
 
-__all__ = ['BaseLogSource', 'ClickHouseLogSource']
+__all__ = ["LogSource", "ClickHouseSource"]

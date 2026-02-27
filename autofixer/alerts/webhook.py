@@ -1,32 +1,44 @@
+"""Webhook alert action (Action-2)."""
+
 import json
 import logging
-from dataclasses import asdict
 
 import requests
 
-from autofixer.alerts.base import BaseAlert
+from autofixer.alerts.base import AlertAction
 from autofixer.detector import Anomaly
 
-logger = logging.getLogger('autofixer')
+logger = logging.getLogger("autofixer")
 
 
-class WebhookAlert(BaseAlert):
-    """Send anomaly alerts to an HTTP webhook endpoint."""
+class WebhookAlert(AlertAction):
+    """Call HTTP webhook on anomaly."""
 
-    def __init__(self, url: str, headers: dict | None = None, timeout: int = 10):
+    def __init__(self, url: str, method: str = "POST", headers: dict | None = None):
         self.url = url
-        self.headers = headers or {'Content-Type': 'application/json'}
-        self.timeout = timeout
+        self.method = method.upper()
+        self.headers = headers or {"Content-Type": "application/json"}
 
-    def send(self, anomaly: Anomaly, **kwargs) -> None:
-        payload = asdict(anomaly)
+    def execute(self, anomaly: Anomaly) -> None:
+        payload = {
+            "anomaly": True,
+            "process_class": anomaly.process_class,
+            "action_name": anomaly.action_name,
+            "duration_seconds": anomaly.duration_seconds,
+            "mean": anomaly.mean,
+            "std": anomaly.std,
+            "threshold": anomaly.threshold,
+            "sample_count": anomaly.sample_count,
+        }
         try:
-            resp = requests.post(
-                self.url,
+            resp = requests.request(
+                method=self.method,
+                url=self.url,
                 data=json.dumps(payload),
                 headers=self.headers,
-                timeout=self.timeout,
+                timeout=10,
             )
             resp.raise_for_status()
-        except Exception:
-            logger.exception('Failed to send webhook alert to %s', self.url)
+            logger.info("Webhook called: %s %s", self.method, self.url)
+        except Exception as e:
+            logger.exception("Webhook call failed: %s", e)

@@ -1,144 +1,128 @@
-"""Main monitoring orchestrator.
-
-Ties together the log source, tracker, stats backend, anomaly detector,
-and alert dispatchers into a single ``Monitor.tick()`` loop.
+"""
+Monitoring process (Mon-1, Mon-2, Mon-3).
+Singleton process listening in a separately run task.
+Near-realtime (up to 5 sec delay). Auto-restart on crash.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
+from typing import Iterator
 
-from autofixer.alerts.base import BaseAlert
-from autofixer.alerts.email import EmailAlert
-from autofixer.alerts.webhook import WebhookAlert
-from autofixer.config import get_config
-from autofixer.detector import Anomaly, AnomalyDetector
-from autofixer.models import AlertConfig
-from autofixer.sources.base import BaseLogSource
-from autofixer.sources.clickhouse import ClickHouseLogSource
-from autofixer.stats.base import BaseStatsBackend, StatsEntry
-from autofixer.stats.clickhouse_backend import ClickHouseStatsBackend
+from django.conf import settings
+
+from autofixer.config import run_actions
+from autofixer.detector import AnomalyDetector
+from autofixer.events import LogEvent, parse_event
+from autofixer.sources.base import LogSource
+from autofixer.sources.clickhouse import ClickHouseSource
 from autofixer.stats.redis_backend import RedisStatsBackend
-from autofixer.tracker import Tracker
+from autofixer.tracker import TransitionTracker
 
-logger = logging.getLogger('autofixer')
-
-
-def _build_log_source() -> BaseLogSource:
-    source_name = get_config('LOG_SOURCE')
-    if source_name == 'clickhouse':
-        return ClickHouseLogSource()
-    from django.utils.module_loading import import_string
-    return import_string(source_name)()
+logger = logging.getLogger("autofixer")
 
 
-def _build_stats_backend() -> BaseStatsBackend:
-    backend_name = get_config('STATS_BACKEND')
-    if backend_name == 'redis':
+def get_source() -> LogSource:
+    """Get log source from config (SRC-2: default ClickHouse)."""
+    cfg = getattr(settings, "AUTOFIXER", {})
+    kind = cfg.get("LOG_SOURCE", "clickhouse")
+    if kind == "clickhouse":
+        return ClickHouseSource()
+    raise ValueError(f"Unknown LOG_SOURCE: {kind}")
+
+
+def get_stats_backend():
+    cfg = getattr(settings, "AUTOFIXER", {})
+    kind = cfg.get("STATS_BACKEND", "redis")
+    if kind == "redis":
         return RedisStatsBackend()
-    if backend_name == 'clickhouse':
-        return ClickHouseStatsBackend()
-    from django.utils.module_loading import import_string
-    return import_string(backend_name)()
+    raise ValueError(f"Unknown STATS_BACKEND: {kind}")
 
 
 class Monitor:
-    """Performs a single monitoring cycle on each ``tick()`` call."""
+    """
+    Main monitoring loop. Mon-1: singleton-style (one process).
+    Mon-2: near-realtime, polls every POLL_INTERVAL seconds.
+    Mon-3: restart on crash handled by caller (Celery beat / management command).
+    """
 
-    def __init__(
-        self,
-        source: BaseLogSource | None = None,
-        tracker: Tracker | None = None,
-        stats: BaseStatsBackend | None = None,
-    ):
-        self.source = source or _build_log_source()
-        self.tracker = tracker or Tracker()
-        self.stats = stats or _build_stats_backend()
-        self.detector = AnomalyDetector(self.stats)
+    def __init__(self):
+        self._source = get_source()
+        self._tracker = TransitionTracker()
+        self._stats = get_stats_backend()
+        self._detector = AnomalyDetector(self._stats)
+        self._last_timestamp: datetime | None = None
+        cfg = getattr(settings, "AUTOFIXER", {})
+        self._prefix = cfg.get("REDIS_KEY_PREFIX", "autofixer")
 
-    # -- main entry point ----------------------------------------------------
+    def _get_last_offset(self) -> datetime | None:
+        from core.redis import redis_client
 
-    def tick(self) -> None:
-        """Run one monitoring cycle: fetch → process → detect → alert."""
-        checkpoint = self.tracker.get_checkpoint()
-        events = self.source.fetch_events(since=checkpoint)
-
-        latest_ts = checkpoint
-        for event in events:
-            completed_at = self.tracker.handle_event(event)
-
-            if completed_at is not None:
-                self._on_transition_done(completed_at)
-
-            if event.timestamp and event.timestamp > latest_ts:
-                latest_ts = event.timestamp
-
-        if latest_ts > checkpoint:
-            self.tracker.set_checkpoint(latest_ts)
-
-        self._check_stuck_transitions()
-
-    # -- internal helpers ----------------------------------------------------
-
-    def _on_transition_done(self, at) -> None:
-        """Record stats and check for slow-completion anomalies."""
-        duration = at.duration_seconds()
-        if duration is None:
-            return
-
-        entry = StatsEntry(
-            process_class=at.process_class,
-            action_name=at.action_name,
-            duration_seconds=duration,
-            status=at.status,
-            instance_key=at.instance_key,
-            root_id=at.root_id,
-        )
-
-        anomaly = self.detector.check_completed(entry)
-
-        # Record *after* anomaly check so the current value doesn't skew
-        # the statistics that were used for comparison.
-        self.stats.record(entry)
-
-        if anomaly:
-            self._dispatch_alert(anomaly)
-
-    def _check_stuck_transitions(self) -> None:
-        threshold = get_config('STUCK_TRANSITION_SECONDS')
-        stuck = self.tracker.get_stuck_transitions(threshold)
-        for at in stuck:
-            anomaly = self.detector.check_stuck(at)
-            if anomaly:
-                self._dispatch_alert(anomaly)
-
-    def _dispatch_alert(self, anomaly: Anomaly) -> None:
-        configs = AlertConfig.objects.filter(is_active=True)
-        for cfg in configs:
-            if not cfg.matches(anomaly.process_class, anomaly.action_name):
-                continue
-            alert = self._alert_from_config(cfg)
-            if alert:
-                try:
-                    alert.send(anomaly)
-                except Exception:
-                    logger.exception('Alert dispatch failed for config %s', cfg.name)
-
-    @staticmethod
-    def _alert_from_config(cfg: AlertConfig) -> BaseAlert | None:
-        if cfg.alert_type == 'email':
-            recipients = [
-                e.strip() for e in cfg.email_recipients.split(',') if e.strip()
-            ]
-            if not recipients:
-                return None
-            return EmailAlert(recipients=recipients, from_email=cfg.email_from or None)
-
-        if cfg.alert_type == 'webhook':
-            if not cfg.webhook_url:
-                return None
-            return WebhookAlert(
-                url=cfg.webhook_url,
-                headers=cfg.webhook_headers or None,
-            )
-
+        key = f"{self._prefix}:monitor:last_offset"
+        val = redis_client.get(key)
+        if val:
+            try:
+                return datetime.fromisoformat(val.decode())
+            except Exception:
+                pass
         return None
+
+    def _set_last_offset(self, ts: datetime) -> None:
+        from core.redis import redis_client
+
+        key = f"{self._prefix}:monitor:last_offset"
+        redis_client.set(key, ts.isoformat())
+
+    def run_once(self) -> None:
+        """Process one batch of logs (one poll cycle)."""
+        since = self._get_last_offset()
+        max_ts = since
+        # tr_id -> (start_ts, process_class, action_name) from Start event
+        transition_meta: dict[str, tuple[datetime, str, str]] = {}
+        already_fired: set[str] = set()
+
+        for ts, message in self._source.fetch_logs(since=since, limit=10000):
+            if max_ts is None or ts > max_ts:
+                max_ts = ts
+
+            event = parse_event(message, ts)
+            if event is None:
+                continue
+
+            # Tracker: active transitions
+            self._tracker.process_event(event, ts)
+            if event.is_start:
+                transition_meta[event.tr_id] = (
+                    ts,
+                    event.process_class or "",
+                    event.action_name or "",
+                )
+
+            # Stats + anomaly: on completion (Unlock/Fail)
+            if event.is_complete:
+                meta = transition_meta.pop(event.tr_id, None)
+                if meta:
+                    start_ts, process_class, action_name = meta
+                    if process_class and action_name:
+                        duration = (ts - start_ts).total_seconds()
+                        self._stats.record_duration(
+                            process_class,
+                            action_name,
+                            duration,
+                        )
+                        anomaly = self._detector.check(
+                            process_class,
+                            action_name,
+                            duration,
+                        )
+                        if anomaly:
+                            logger.warning(
+                                "Anomaly: %s.%s took %.2fs (threshold %.2fs)",
+                                anomaly.process_class,
+                                anomaly.action_name,
+                                duration,
+                                anomaly.threshold,
+                            )
+                            run_actions(anomaly, already_fired)
+
+        if max_ts:
+            self._set_last_offset(max_ts)

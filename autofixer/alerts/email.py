@@ -1,39 +1,45 @@
+"""Email alert action (Action-1)."""
+
 import logging
 
 from django.core.mail import send_mail
+from django.conf import settings
 
-from autofixer.alerts.base import BaseAlert
+from autofixer.alerts.base import AlertAction
 from autofixer.detector import Anomaly
 
-logger = logging.getLogger('autofixer')
+logger = logging.getLogger("autofixer")
 
 
-class EmailAlert(BaseAlert):
-    """Send anomaly alerts via Django's email backend."""
+class EmailAlert(AlertAction):
+    """Send email on anomaly."""
 
-    def __init__(self, recipients: list[str], from_email: str | None = None):
-        self.recipients = recipients
-        self.from_email = from_email
+    def __init__(self, recipients: list[str] | None = None, subject_prefix: str = "[Autofixer]"):
+        self.recipients = recipients or []
+        self.subject_prefix = subject_prefix
 
-    def send(self, anomaly: Anomaly, **kwargs) -> None:
-        subject = (
-            f'[autofixer] {anomaly.anomaly_type}: '
-            f'{anomaly.process_class}.{anomaly.action_name}'
-        )
+    def execute(self, anomaly: Anomaly) -> None:
+        if not self.recipients:
+            logger.warning("EmailAlert: no recipients configured, skipping")
+            return
+        subject = f"{self.subject_prefix} Anomaly: {anomaly.process_class}.{anomaly.action_name}"
         body = (
-            f'Anomaly detected: {anomaly.anomaly_type}\n'
-            f'Process: {anomaly.process_class}\n'
-            f'Action: {anomaly.action_name}\n'
-            f'Instance: {anomaly.instance_key}\n'
-            f'Duration: {anomaly.duration_seconds:.2f}s\n'
-            f'Threshold: {anomaly.threshold:.2f}s '
-            f'(mean={anomaly.mean:.2f}, std_dev={anomaly.std_dev:.2f})\n'
-            f'Root ID: {anomaly.root_id}\n'
+            f"Anomaly detected:\n"
+            f"  Process: {anomaly.process_class}\n"
+            f"  Action: {anomaly.action_name}\n"
+            f"  Duration: {anomaly.duration_seconds:.2f}s\n"
+            f"  Mean: {anomaly.mean:.2f}s, Std: {anomaly.std:.2f}s\n"
+            f"  Threshold: {anomaly.threshold:.2f}s\n"
+            f"  Samples: {anomaly.sample_count}\n"
         )
         try:
             send_mail(
-                subject, body, self.from_email, self.recipients,
+                subject=subject,
+                message=body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=self.recipients,
                 fail_silently=False,
             )
-        except Exception:
-            logger.exception('Failed to send email alert')
+            logger.info("Sent anomaly email to %s", self.recipients)
+        except Exception as e:
+            logger.exception("Failed to send anomaly email: %s", e)

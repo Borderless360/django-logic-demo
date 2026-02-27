@@ -57,7 +57,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 ROOT_URLCONF = 'demo.urls'
-SECRET_KEY = 'something-secret'
+SECRET_KEY = "something-secret"
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@localhost")
 DEFAULT_AUTO_FIELD  = 'django.db.models.AutoField'
 
 TEMPLATES = [
@@ -134,9 +135,9 @@ QUEUE_TRANSITION_MAX_RETRIES = 3
 from celery.schedules import crontab  # noqa: E402
 
 CELERY_BEAT_SCHEDULE = {
-    'autofixer-tick': {
-        'task': 'autofixer.tick',
-        'schedule': 5.0,
+    "autofixer-tick": {
+        "task": "autofixer.tick",
+        "schedule": 5.0,  # Mon-2: near-realtime, up to 5 sec delay
     },
 }
 
@@ -144,14 +145,20 @@ CELERY_BEAT_SCHEDULE = {
 # Autofixer configuration
 # ---------------------------------------------------------------------------
 AUTOFIXER = {
-    'LOG_SOURCE': 'clickhouse',
-    'STATS_BACKEND': 'redis',
-    'POLL_INTERVAL': 5,
-    'LOCK_TIMEOUT': 30,
-    'ANOMALY_STD_DEV_MULTIPLIER': 3.0,
-    'ANOMALY_MIN_SAMPLES': 10,
-    'STATS_WINDOW_SIZE': 1000,
-    'REDIS_KEY_PREFIX': 'autofixer',
-    'CLICKHOUSE_STATS_TABLE': 'transition_stats',
-    'STUCK_TRANSITION_SECONDS': 300,
+    "LOG_SOURCE": "clickhouse",
+    "STATS_BACKEND": "redis",
+    "POLL_INTERVAL": 5,
+    "LOCK_TIMEOUT": 30,
+    "ANOMALY_STD_DEV_MULTIPLIER": 2.0,  # Anom-1: >2σ from mean
+    "ANOMALY_MIN_SAMPLES": 5,  # Anom-1: minimum 5 records
+    "STATS_WINDOW_SIZE": 1000,
+    "REDIS_KEY_PREFIX": "autofixer",
+    "STUCK_TRANSITION_SECONDS": 300,
+    # AC-1: ActionConfig - configure actions per anomaly pattern (process_class:action_name, * for wildcard)
+    # "ACTION_CONFIG": [
+    #     {"pattern": "*:*", "actions": [
+    #         {"type": "email", "recipients": ["admin@example.com"]},
+    #         {"type": "webhook", "url": "https://example.com/webhook"},
+    #     ]},
+    # ],
 }

@@ -39,3 +39,9 @@ Notes:
 Show new cursor commands.
 
 https://github.com/madebyaris/spec-kit-command-cursor/tree/main
+
+
+### Exp. of using for spec generation:
+gpt-5.3-codex - 0.03$ but bad result
+composer-1.5 - 0.02$ bad also, but better then gpt-5.3-codex
+claude-4.6-opus-high-thinking - 0.18$ good result

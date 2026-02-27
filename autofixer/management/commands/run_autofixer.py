@@ -1,80 +1,44 @@
-"""Management command alternative to Celery Beat.
+"""Run autofixer monitor in a loop (Mon-1: singleton process)."""
 
-Usage:
-    python manage.py run_autofixer
-
-Runs the monitoring loop in the foreground with a configurable poll interval.
-Uses the same Redis lock as the Celery task to guarantee singleton behaviour.
-"""
-
-import signal
-import time
 import logging
+import signal
+import sys
 
 from django.core.management.base import BaseCommand
-from redis.exceptions import LockNotOwnedError
 
-from core.redis import redis_client
-from autofixer.config import get_config
 from autofixer.monitor import Monitor
 
-logger = logging.getLogger('autofixer')
-
-LOCK_KEY_SUFFIX = ':monitor_lock'
+logger = logging.getLogger("autofixer")
 
 
 class Command(BaseCommand):
-    help = 'Run the autofixer monitoring loop (alternative to Celery Beat)'
+    help = "Run autofixer monitor (polls logs, detects anomalies, runs actions)"
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--interval',
-            type=int,
-            default=None,
-            help='Poll interval in seconds (default: AUTOFIXER.POLL_INTERVAL)',
+            "--interval",
+            type=float,
+            default=5,
+            help="Poll interval in seconds (default: 5, Mon-2: near-realtime)",
         )
 
     def handle(self, *args, **options):
-        interval = options['interval'] or get_config('POLL_INTERVAL')
-        lock_key = f'{get_config("REDIS_KEY_PREFIX")}{LOCK_KEY_SUFFIX}'
-        lock_timeout = max(interval * 10, get_config('LOCK_TIMEOUT'))
-
-        self._running = True
-        signal.signal(signal.SIGINT, self._stop)
-        signal.signal(signal.SIGTERM, self._stop)
-
-        lock = redis_client.lock(lock_key, timeout=lock_timeout)
-        acquired = lock.acquire(blocking_timeout=5)
-        if not acquired:
-            self.stderr.write('Another autofixer instance is already running.')
-            return
-
-        self.stdout.write(f'autofixer started (interval={interval}s)')
-
+        interval = options["interval"]
         monitor = Monitor()
-        try:
-            while self._running:
-                try:
-                    monitor.tick()
-                    lock.reacquire()
-                except LockNotOwnedError:
-                    logger.warning(
-                        'Lock expired (tick took longer than %ds), re-acquiring',
-                        lock_timeout,
-                    )
-                    lock = redis_client.lock(lock_key, timeout=lock_timeout)
-                    if not lock.acquire(blocking_timeout=5):
-                        logger.error('Failed to re-acquire lock, exiting')
-                        break
-                except Exception:
-                    logger.exception('autofixer tick error')
-                time.sleep(interval)
-        finally:
-            try:
-                lock.release()
-            except Exception:
-                pass
-            self.stdout.write('autofixer stopped')
+        self.stdout.write(f"Autofixer running (interval={interval}s). Ctrl+C to stop.")
+        self.stdout.write("")
 
-    def _stop(self, signum, frame):
-        self._running = False
+        def on_sigterm(signum, frame):
+            logger.info("Autofixer received SIGTERM, shutting down")
+            sys.exit(0)
+
+        signal.signal(signal.SIGTERM, on_sigterm)
+
+        import time
+
+        try:
+            while True:
+                monitor.run_once()
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            self.stdout.write("\nStopped.")

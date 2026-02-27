@@ -1,44 +1,23 @@
-"""Celery tasks for the autofixer monitoring loop.
-
-The ``autofixer_tick`` task is meant to be called periodically (e.g. every 5 s
-via Celery Beat).  A Redis lock guarantees that only **one** tick runs at a
-time across all workers, satisfying the "single listener" requirement.
-"""
+"""Celery task for autofixer tick (Mon-1, Mon-3)."""
 
 import logging
 
 from celery import shared_task
-from core.redis import redis_client
-from autofixer.config import get_config
 
-logger = logging.getLogger('autofixer')
+from autofixer.monitor import Monitor
 
-LOCK_KEY_SUFFIX = ':monitor_lock'
+logger = logging.getLogger("autofixer")
 
 
-def _lock_key() -> str:
-    return f'{get_config("REDIS_KEY_PREFIX")}{LOCK_KEY_SUFFIX}'
-
-
-@shared_task(name='autofixer.tick', ignore_result=True)
-def autofixer_tick():
-    """Single monitoring cycle, protected by a distributed lock."""
-    lock_timeout = get_config('LOCK_TIMEOUT')
-    lock = redis_client.lock(_lock_key(), timeout=lock_timeout, blocking=False)
-
-    acquired = lock.acquire(blocking=False)
-    if not acquired:
-        logger.debug('autofixer_tick skipped — another instance holds the lock')
-        return
-
+@shared_task(name="autofixer.tick")
+def tick():
+    """
+    Celery beat task: run one monitor poll.
+    Mon-3: Celery will auto-restart on crash.
+    """
     try:
-        from autofixer.monitor import Monitor
         monitor = Monitor()
-        monitor.tick()
-    except Exception:
-        logger.exception('autofixer_tick failed')
-    finally:
-        try:
-            lock.release()
-        except Exception:
-            pass
+        monitor.run_once()
+    except Exception as e:
+        logger.exception("Autofixer tick failed: %s", e)
+        raise

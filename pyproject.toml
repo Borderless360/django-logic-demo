@@ -19,6 +19,7 @@ dependencies = [
     "django-extensions == 4.1",
     "psycopg2-binary == 2.9.11",
     "redis == 7.1.0",
+    "requests ~=2.32.0",
 ]
 
 [dependency-groups]

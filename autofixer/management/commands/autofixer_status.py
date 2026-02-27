@@ -1,41 +1,25 @@
-"""Management command to view currently active transitions.
-
-Usage:
-    python manage.py autofixer_status
-"""
+"""Show active transitions (UA-1: user can view at any time)."""
 
 from django.core.management.base import BaseCommand
 
-from autofixer.tracker import Tracker
+from autofixer.tracker import TransitionTracker
 
 
 class Command(BaseCommand):
-    help = 'Show currently active autofixer-tracked transitions'
-
-    def add_arguments(self, parser):
-        parser.add_argument(
-            '--chain', type=str, default=None,
-            help='Show only transitions for the given root_id',
-        )
+    help = "Show active django-logic transitions"
 
     def handle(self, *args, **options):
-        tracker = Tracker()
+        tracker = TransitionTracker()
+        active = tracker.get_active()
 
-        if options['chain']:
-            transitions = tracker.get_chain(options['chain'])
-        else:
-            transitions = tracker.get_active_transitions()
-
-        if not transitions:
-            self.stdout.write('No active transitions.')
+        if not active:
+            self.stdout.write("No active transitions.")
             return
 
-        self.stdout.write(f'Active transitions: {len(transitions)}\n')
-        for at in transitions:
-            dur = at.duration_seconds()
-            dur_str = f'{dur:.1f}s' if dur else '?'
+        self.stdout.write(f"Active transitions ({len(active)}):")
+        self.stdout.write("")
+        for t in active:
             self.stdout.write(
-                f'  [{at.status:>9}] {at.process_class}.{at.action_name} '
-                f'instance={at.instance_key} duration={dur_str} '
-                f'tr_id={at.tr_id} root={at.root_id}'
+                f"  {t.tr_id}  {t.process_class}.{t.action_name}  "
+                f"instance={t.instance_key}  root={t.root_id}  started={t.started_at}"
             )
