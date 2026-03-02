@@ -57,6 +57,9 @@ test-one:
 	make worker-restart
 	docker compose -p $(PROJECT_NAME) exec demo pytest $(t) 
 
+test-x:
+	make test-one t=abstract/e2e/test_basic.py::test_transition_with_failed_callback
+
 autofixer-run:
 	docker compose -p $(PROJECT_NAME) exec demo python manage.py run_autofixer --interval 5
 autofixer-status:

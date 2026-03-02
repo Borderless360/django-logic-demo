@@ -129,3 +129,27 @@ def test_transition_without_user():
     logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
     logs.check(f'{tr_id} Callbacks 0')
     # logs.check(f'{tr_id} {TransitionEventType.FAIL.value}:')
+
+
+@pytest.mark.django_db(transaction=True)
+def test_transition_with_failed_callback(superuser):
+    """Callback exception should not fail transition and state should still be updated."""
+    a = A.objects.create(name='A')
+    process = BasicProcess(instance=a)
+    tr_id = process.fail_callback(user=superuser)
+
+    assert tr_id is not None
+    assert wait_state_unlock(process.state), "State should be unlocked"
+    a.refresh_from_db()
+    assert a.status == STATES.B
+
+    logs = LogChecker(get_logs_by_tr_id(tr_id, as_dict=True))
+    logs.check(f'{tr_id} {TransitionEventType.START.value} BasicProcess fail_callback {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id} SideEffects 0')
+    logs.check(f'{tr_id} {TransitionEventType.SET_STATE.value} B')
+    logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id} Callbacks 2')
+    logs.check(f'{tr_id} {TransitionEventType.CALLBACK.value} error_for_superuser')
+    logs.check(f'{tr_id} {TransitionEventType.CALLBACK.value} error_for_superuser: Error for superuser')
+    logs.check(f'{tr_id} {TransitionEventType.CALLBACK.value} short_action')
