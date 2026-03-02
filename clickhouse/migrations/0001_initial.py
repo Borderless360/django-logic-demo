@@ -33,7 +33,7 @@ def create_clickhouse_table(apps, schema_editor):
         msg Nullable(String),
         levelno Nullable(UInt8),
         args Nullable(String),
-        _timestamp DateTime DEFAULT now()
+        _timestamp DateTime64(3) DEFAULT now64(3)
     ) ENGINE = MergeTree()
     ORDER BY (_timestamp, levelname)
     PARTITION BY toYYYYMM(_timestamp)
