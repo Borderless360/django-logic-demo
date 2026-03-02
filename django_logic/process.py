@@ -73,13 +73,13 @@ class Process(object):
                             f"to {transition.target}",
                             log_type=LogType.TRANSITION_DEBUG,
                             log_data=self.state.get_log_data())
-        logger.info(
-            f"{self.state.instance_key}, process {self.process_name} "
-            f"executes '{action_name}' transition from {self.state.cached_state} "
-            f"to {transition.target}"
-        )
 
         tr_id = uuid.uuid4()
+        logger.info(
+            f"{tr_id} {self.state.instance_key}, process {self.process_name} "
+            f"executes '{action_name}' transition from {self.state.cached_state} "
+            f"to {transition.target}  "
+        )
         kwargs['root_id'] = kwargs.get('root_id', tr_id)
         kwargs['parent_id'] = kwargs.get('tr_id', tr_id)
         kwargs['tr_id'] = tr_id
@@ -163,11 +163,6 @@ class Process(object):
                              f"to {transition.target}",
                              log_type=LogType.TRANSITION_DEBUG,
                              log_data=self.state.get_log_data())
-            logger.info(
-                f"{self.state.instance_key}, process {self.process_name} "
-                f"executes '{action_name}' transition from {self.state.cached_state} "
-                f"to {transition.target}"
-            )
             return transition
         elif len(transitions) > 1:
             # DEPRECATED

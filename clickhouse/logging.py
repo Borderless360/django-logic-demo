@@ -10,7 +10,10 @@ class UUIDEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, UUID):
             return str(obj)
-        return super().default(obj)
+        try:
+            return super().default(obj)
+        except TypeError:
+            return str(obj)
 
 
 class ClickHouseHandler(logging.Handler):
@@ -58,7 +61,7 @@ class ClickHouseHandler(logging.Handler):
                 self.format_exception(record.exc_info) if record.exc_info else None,
                 str(record.msg) if hasattr(record, 'msg') else None,
                 record.levelno if hasattr(record, 'levelno') else None,
-                json.dumps(record.args, cls=UUIDEncoder) if hasattr(record, 'args') and record.args else None,
+                self._serialize_log_payload(record),
             ]
             
             # Insert into ClickHouse with explicit column names
@@ -77,6 +80,36 @@ class ClickHouseHandler(logging.Handler):
             return self.formatter.formatTime(record, self.formatter.datefmt)
         else:
             return datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
+
+    def _serialize_log_payload(self, record):
+        """
+        Serialize args and custom `extra` record attributes.
+        """
+        payload = {}
+
+        if hasattr(record, 'args') and record.args:
+            payload['args'] = record.args
+
+        extra = self._extract_extra(record)
+        if extra:
+            payload['extra'] = extra
+
+        if not payload:
+            return None
+
+        return json.dumps(payload, cls=UUIDEncoder)
+
+    def _extract_extra(self, record):
+        """
+        Extract custom fields passed via `logger.*(..., extra={...})`.
+        """
+        default_record_fields = set(logging.makeLogRecord({}).__dict__.keys())
+        default_record_fields.update({'message', 'asctime'})
+        return {
+            key: value
+            for key, value in record.__dict__.items()
+            if key not in default_record_fields
+        }
     
     def format_exception(self, exc_info):
         """

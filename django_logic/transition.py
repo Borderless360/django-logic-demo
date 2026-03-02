@@ -109,7 +109,8 @@ class Transition(BaseTransition):
         process_class_name = process_class.split('.')[-1] if process_class else ''
         transition_logger.info(
             f'{kwargs.get("tr_id")} {TransitionEventType.START.value} {process_class_name} '
-            f'{self.action_name} {state.instance_key} {kwargs.get("root_id")} {kwargs.get("parent_id")}'
+            f'{self.action_name} {state.instance_key} {kwargs.get("root_id")} {kwargs.get("parent_id")}',
+            extra={'kwargs': kwargs, 'state_hash': state._get_hash()}
         )
 
         # Background Mode has two phases:
