@@ -151,7 +151,7 @@ class Process(object):
 
         for sub_process_class in self.nested_processes:
             sub_process = sub_process_class(state=self.state)
-            yield from sub_process.get_available_transitions(user=user, action_name=action_name)
+            yield from sub_process.get_available_transitions(user=user, action_name=action_name, ignore_state=ignore_state)
 
     def get_transition_by_action_name(self, action_name: str, user=None):
         transitions = list(self.get_available_transitions(action_name=action_name, user=user, ignore_state=True))
