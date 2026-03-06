@@ -159,7 +159,7 @@ class Process(object):
             transition = transitions[0]
             # DEPRECATED
             self.logger.info(f"{self.state.instance_key}, process {self.process_name} "
-                             f"executes '{action_name}' transition from {getattr(self.state.instance, self.state.field_name)} "
+                             f"executes '{action_name}' transition from {self.state.get_state()} "
                              f"to {transition.target}",
                              log_type=LogType.TRANSITION_DEBUG,
                              log_data=self.state.get_log_data())

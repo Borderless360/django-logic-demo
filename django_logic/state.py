@@ -42,6 +42,9 @@ class State(object):
             'process_name': self.process_name,
             'field_name': self.field_name,
         }
+    
+    def get_state(self):
+        return getattr(self.instance, self.field_name)
 
     def _get_hash(self):
         return blake2b(self.instance_key.encode(), digest_size=16).hexdigest()
