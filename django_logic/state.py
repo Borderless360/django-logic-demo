@@ -19,16 +19,13 @@ class State(object):
         """
         return self.get_queryset().values_list(self.field_name, flat=True).get(pk=self.instance.id)
 
-    @cached_property
-    def cached_state(self):
-        return self.get_db_state()
-
     def set_state(self, state):
         """
         Sets intermediate state to instance's field until transition is over.
         """
-        # TODO: how would it work if it's used within another transaction?
-        self.get_queryset().filter(pk=self.instance.id).update(**{self.field_name: state})
+        setattr(self.instance, self.field_name, state)
+        # update with single instance save to apply overloaded save method
+        self.instance.save(update_fields=[self.field_name])
         self.instance.refresh_from_db()
 
     @property
