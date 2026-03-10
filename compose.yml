@@ -87,7 +87,4 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
   demo-worker:
     <<: *demo
-    command: celery -A demo.celery_app worker -l INFO --concurrency=4
-  # demo-beat:
-  #   <<: *demo
-  #   command: celery -A demo.celery_app beat -l INFO --scheduler django_celery_beat.schedulers.DatabaseScheduler
+    command: celery -A demo.celery_app worker -B -l INFO --concurrency=4

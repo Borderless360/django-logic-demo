@@ -61,3 +61,54 @@ There are three main parts:
 
 ## User action
 - UA-1: can view active transitions at any time from Redis
+
+# Domain
+Short description of domain.
+
+## Data
+
+### **Model** - shor description of model
+#### *Setup of Model*
+
+### **OrgStatus** - enum of statuses for organization
+#### *Oprions*
+- inactive
+- active
+
+### **Org** - Organization 
+#### *Fields*
+- id
+- name - unique string (max 255 lenght), cannot be empty
+- owner
+- status
+#### *Constrains*
+    
+## Bissnes logic 
+Кто что может делать и при каких условиях.
+- User can create a new Organization
+- Only owner can edit the Organization
+- Only owner can delete own Organization
+- Only owner can change the owner to other user. 
+
+- `Create`: Инициализация организации, создание дефолтного Wallet.
+- `Suspend`: Блокировка всех действий при неуплате. -->
+
+
+## Process
+
+
+
+## 🏗 1. Identity & Access (IAM)
+Управление иерархией: Организация > Группы > Участники.
+
+
+### **Entity: Group**
+*Логическое объединение участников внутри организации.*
+- **Fields:** `id`, `org_id`, `name`, `permissions` [JSON/Flags].
+- **Actions:**
+    - `AddMember`: Привязка участника к группе.
+    - `SyncPermissions`: Обновление прав доступа для всех участников группы.
+
+### **Entity: Member**
+*Связь между User и Organization.*
+- **Fields:** `user_id`, `org_id`, `role` [Admin, Editor, Viewer], `joined_at`.

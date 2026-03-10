@@ -1,7 +1,7 @@
 from django.apps import AppConfig
 
 
-class AutofixerConfig(AppConfig):
+class DjangoLogicMonitoringConfig(AppConfig):
     default_auto_field = "django.db.models.AutoField"
-    name = "autofixer"
+    name = "django_logic_monitoring"
 

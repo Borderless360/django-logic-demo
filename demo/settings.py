@@ -45,7 +45,7 @@ INSTALLED_APPS = [
     'django_logic',
     'django_logic_celery',
     'django_logic_ext',
-    'autofixer',
+    'django_logic_monitoring',
 ]
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -114,7 +114,7 @@ LOGGING = {
             'handlers': ['file', 'clickhouse'],
             'level': logging.INFO,
         },
-        'autofixer': {
+        'django_logic_monitoring': {
             'handlers': ['console'],
             'level': logging.INFO,
         },
@@ -135,30 +135,17 @@ QUEUE_TRANSITION_MAX_RETRIES = 3
 from celery.schedules import crontab  # noqa: E402
 
 CELERY_BEAT_SCHEDULE = {
-    "autofixer-tick": {
-        "task": "autofixer.tick",
-        "schedule": 5.0,  # Mon-2: near-realtime, up to 5 sec delay
+    "dlm-monitoring": {
+        "task": "django_logic_monitoring.monitoring",
+        "schedule": float(os.getenv("DLM_MONITORING_DELAY", 10)),
     },
 }
 
 # ---------------------------------------------------------------------------
-# Autofixer configuration
+# Django Logic Monitoring configuration
 # ---------------------------------------------------------------------------
-AUTOFIXER = {
-    "LOG_SOURCE": "clickhouse",
-    "STATS_BACKEND": "redis",
-    "POLL_INTERVAL": 5,
-    "LOCK_TIMEOUT": 30,
-    "ANOMALY_STD_DEV_MULTIPLIER": 2.0,  # Anom-1: >2σ from mean
-    "ANOMALY_MIN_SAMPLES": 5,  # Anom-1: minimum 5 records
-    "STATS_WINDOW_SIZE": 1000,
-    "REDIS_KEY_PREFIX": "autofixer",
-    "STUCK_TRANSITION_SECONDS": 300,
-    # AC-1: ActionConfig - configure actions per anomaly pattern (process_class:action_name, * for wildcard)
-    # "ACTION_CONFIG": [
-    #     {"pattern": "*:*", "actions": [
-    #         {"type": "email", "recipients": ["admin@example.com"]},
-    #         {"type": "webhook", "url": "https://example.com/webhook"},
-    #     ]},
-    # ],
-}
+DLM_CLICKHOUSE_CLIENT_PATH = "clickhouse.client.client"
+DLM_DEFAULT_TIME_LIMIT = 300        # seconds
+DLM_MONITORING_DELAY = 10           # seconds
+DLM_MIN_EXECUTIONS = 5              # min samples before computing σ
+DLM_MAX_EXECUTIONS = 100            # rolling window size
