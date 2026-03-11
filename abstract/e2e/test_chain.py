@@ -195,6 +195,38 @@ def test_chain_recovery_after_mid_chain_failure(user, superuser):
 
 
 @pytest.mark.django_db(transaction=True)
+def test_chain_go_to_C_with_auto_context(user):
+    """go_to_C_with_auto_context uses a callback that does NOT forward **kwargs.
+    root_id and parent_id propagate via ContextVar automatically (user does not)."""
+    a = A.objects.create(name='A', status=STATES.B)
+    process = ChainProcess(instance=a)
+    tr_id = process.go_to_C_with_auto_context(user=user)
+
+    assert wait_state_unlock(process.state), "State should be unlocked"
+    a.refresh_from_db()
+    assert a.status == STATES.D
+
+    nested_tr_ids = get_nested_tr_ids(tr_id, expected_count=1)
+    go_to_D_tr_id = nested_tr_ids[0]
+    logs = LogChecker(get_all_logs_by_root_id(tr_id, as_dict=True))
+    logs.check(f'{tr_id} {TransitionEventType.START.value} ChainProcess go_to_C_with_auto_context {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{tr_id} SideEffects 1')
+    logs.check(f'{tr_id} {TransitionEventType.SIDE_EFFECT.value} error_for_superuser')
+    logs.check(f'{tr_id} {TransitionEventType.SET_STATE.value} C')
+    logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{tr_id} Callbacks 1')
+    logs.check(f'{tr_id} {TransitionEventType.CALLBACK.value} callback')
+    # root_id=tr_id and parent_id=tr_id — inherited via ContextVar, not via **kwargs
+    logs.check(f'{go_to_D_tr_id} {TransitionEventType.START.value} ChainProcess go_to_D {process.state.instance_key} {tr_id} {tr_id}')
+    logs.check(f'{go_to_D_tr_id} {TransitionEventType.LOCK.value}')
+    logs.check(f'{go_to_D_tr_id} SideEffects 0')
+    logs.check(f'{go_to_D_tr_id} {TransitionEventType.SET_STATE.value} D')
+    logs.check(f'{go_to_D_tr_id} {TransitionEventType.UNLOCK.value}')
+    logs.check(f'{go_to_D_tr_id} Callbacks 0')
+
+
+@pytest.mark.django_db(transaction=True)
 def test_chain_with_no_user():
     """When no user is provided, go_to_B succeeds but go_to_C fails with 'User is required'."""
     a = A.objects.create(name='A')

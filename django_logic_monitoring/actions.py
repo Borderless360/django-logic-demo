@@ -161,7 +161,7 @@ def fetch_logs():
         if tr_id in active_steps:
             prev = active_steps.pop(tr_id)
             tr_data = TransitionStore.get(tr_id)
-            if tr_data and prev["step_name"]:
+            if tr_data and prev["step_name"] and "process" in tr_data:
                 duration = (timestamp - prev["start_time"]).total_seconds()
                 if duration > 0:
                     stat_updates.append((
