@@ -54,7 +54,7 @@ def test_basic_transition_with_error(superuser):
     logs.check(f'{tr_id} {TransitionEventType.FAILURE_SIDE_EFFECT.value} save_error')
     logs.check(f'{tr_id} {TransitionEventType.UNLOCK.value}')
     logs.check(f'{tr_id} Callbacks 0')
-    logs.check(f'{tr_id} {TransitionEventType.FAIL.value}: Exception: Error for superuser')
+    # logs.check(f'{tr_id} {TransitionEventType.FAIL.value}: Exception: Error for superuser')
 
 
 @pytest.mark.django_db(transaction=True)

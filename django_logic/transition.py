@@ -160,10 +160,7 @@ class Transition(BaseTransition):
                     f"{kwargs.get('tr_id')} {TransitionEventType.FAIL.value}: {type(e).__name__}: {e}",
                     exc_info=True,
                 )
-                # Do not re-raise the exception for root transition
-                # We need this for backward compatibility with the old code for now
-                if kwargs.get('root_id') != kwargs.get('tr_id'):
-                    raise e
+                # raise
 
         return kwargs.get('tr_id', None)
 
@@ -282,12 +279,8 @@ class Action(Transition):
         :param state: State object
         """
         # TODO: UUID for actions?
-        try:
-            self._init_transition_context(kwargs)
-            self.side_effects.execute(state, **kwargs)
-        except Exception as e:
-            if kwargs.get('root_id') != kwargs.get('tr_id'):
-                raise e
+        self._init_transition_context(kwargs)
+        self.side_effects.execute(state, **kwargs)
 
     def complete_transition(self, state: State, **kwargs):
         """
