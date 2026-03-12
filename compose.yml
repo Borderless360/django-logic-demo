@@ -87,4 +87,4 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
   demo-worker:
     <<: *demo
-    command: celery -A demo.celery_app worker -l INFO --concurrency=4
+    command: celery -A demo.celery_app worker -B -l INFO --concurrency=4 --schedule=/tmp/celerybeat-schedule

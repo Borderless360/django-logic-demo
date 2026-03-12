@@ -1,0 +1,13 @@
+---
+description: Always read spec.md before working with an app
+alwaysApply: true
+---
+
+# Read spec.md first
+
+Before making changes to any Django app, read its `spec.md` to understand the domain model, business rules, and runtime requirements.
+
+## Where to find spec.md
+
+- Project root: `spec.md` — top-level project specification
+- Inside each Django app directory: `<app>/spec.md` — app-level specification

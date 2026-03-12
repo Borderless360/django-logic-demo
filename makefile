@@ -19,6 +19,8 @@ info:
 	@echo "  test_locker   : Run locker tests"
 	@echo "  test_abstract : Run abstract tests"
 	@echo "  test          : Run all tests"
+	@echo ""
+	@echo "  dlm-check     : Check DLM monitoring (clear state, process CH logs, show results)"
 
 build:
 	export DOCKER_BUILDKIT=1 && \
@@ -56,3 +58,20 @@ test-one:
 	make migrate
 	make worker-restart
 	docker compose -p $(PROJECT_NAME) exec demo pytest $(t) 
+
+test-x:
+	make test-one t=abstract/e2e/test_basic.py::test_transition_with_failed_callback
+
+dlm-check:
+	make manage s=demo c=dlm_e2e_check
+dlm-clear-stats:
+	make manage s=demo c=dlm_clear_stats
+
+celery-tasks:
+	docker compose -p $(PROJECT_NAME) exec demo-worker celery -A demo.celery_app inspect registered
+celery-active:
+	docker compose -p $(PROJECT_NAME) exec demo-worker celery -A demo.celery_app inspect active
+celery-recent:
+	docker compose -p $(PROJECT_NAME) logs demo-worker --tail=500 --no-log-prefix | grep -E 'Task .+ (succeeded|failed|rejected|revoked)' | tail -20
+celery-schedule:
+	docker compose -p $(PROJECT_NAME) exec demo python -c "from demo.settings import CELERY_BEAT_SCHEDULE; import json; print(json.dumps(CELERY_BEAT_SCHEDULE, indent=2, default=str))"

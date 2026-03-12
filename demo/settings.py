@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'django_logic',
     'django_logic_celery',
     'django_logic_ext',
+    'django_logic_monitoring',
 ]
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -56,7 +57,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 ROOT_URLCONF = 'demo.urls'
-SECRET_KEY = 'something-secret'
+SECRET_KEY = "something-secret"
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@localhost")
 DEFAULT_AUTO_FIELD  = 'django.db.models.AutoField'
 
 TEMPLATES = [
@@ -112,6 +114,10 @@ LOGGING = {
             'handlers': ['file', 'clickhouse'],
             'level': logging.INFO,
         },
+        'django_logic_monitoring': {
+            'handlers': ['console'],
+            'level': logging.INFO,
+        },
     },
 }
 
@@ -122,3 +128,24 @@ DJANGO_LOGIC_EXT_CLEANUP_DAYS = os.getenv('DJANGO_LOGIC_EXT_CLEANUP_DAYS', 7)
 
 
 QUEUE_TRANSITION_MAX_RETRIES = 3
+
+# ---------------------------------------------------------------------------
+# Celery Beat schedule
+# ---------------------------------------------------------------------------
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    "dlm-monitoring": {
+        "task": "django_logic_monitoring.monitoring",
+        "schedule": float(os.getenv("DLM_MONITORING_DELAY", 10)),
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Django Logic Monitoring configuration
+# ---------------------------------------------------------------------------
+DLM_CLICKHOUSE_CLIENT_PATH = "clickhouse.client.client"
+DLM_DEFAULT_TIME_LIMIT = 300        # seconds
+DLM_MONITORING_DELAY = 10           # seconds
+DLM_MIN_EXECUTIONS = 5              # min samples before computing σ
+DLM_MAX_EXECUTIONS = 100            # rolling window size

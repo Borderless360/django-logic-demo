@@ -1,5 +1,6 @@
 import uuid
 import warnings
+from contextvars import ContextVar
 from django_logic.logger import TransitionEventType
 from django_logic.commands import Conditions, Permissions
 from django_logic.constants import LogType
@@ -7,6 +8,10 @@ from django_logic.exceptions import TransitionNotAllowed
 from django_logic.logger import logger, transition_logger
 from django_logic.logger import get_logger
 from django_logic.state import State
+
+# Thread-safe per-execution-chain context that propagates transition metadata
+# (root_id, tr_id) through nested callbacks without explicit **kwargs forwarding.
+_transition_context: ContextVar[dict | None] = ContextVar('_transition_context', default=None)
 
 
 class Process(object):
@@ -65,21 +70,28 @@ class Process(object):
         """
         It returns a callable transition method for the provided action name.
         """
+        # Inherit transition context from parent (propagates root_id, parent_id
+        # through nested callbacks even without explicit **kwargs forwarding)
+        parent_ctx = _transition_context.get()
+        if parent_ctx:
+            kwargs.setdefault('root_id', parent_ctx['root_id'])
+            kwargs.setdefault('tr_id', parent_ctx['tr_id'])
+
         user = kwargs['user'] if 'user' in kwargs else None
         transition = self.get_transition_by_action_name(action_name, user)
         # DEPRECATED
         self.logger.info(f"{self.state.instance_key}, process {self.process_name} "
-                            f"executes '{action_name}' transition from {self.state.cached_state} "
+                            f"executes '{action_name}' transition from {getattr(self.state.instance, self.state.field_name)} "
                             f"to {transition.target}",
                             log_type=LogType.TRANSITION_DEBUG,
                             log_data=self.state.get_log_data())
-        logger.info(
-            f"{self.state.instance_key}, process {self.process_name} "
-            f"executes '{action_name}' transition from {self.state.cached_state} "
-            f"to {transition.target}"
-        )
 
         tr_id = uuid.uuid4()
+        logger.info(
+            f"{tr_id} {self.state.instance_key}, process {self.process_name} "
+            f"executes '{action_name}' transition from {getattr(self.state.instance, self.state.field_name)} "
+            f"to {transition.target}  "
+        )
         kwargs['root_id'] = kwargs.get('root_id', tr_id)
         kwargs['parent_id'] = kwargs.get('tr_id', tr_id)
         kwargs['tr_id'] = tr_id
@@ -87,23 +99,31 @@ class Process(object):
         if 'process_class' not in kwargs:
             process_class = f"{self.__class__.__module__}.{self.__class__.__name__}"
             kwargs['process_class'] = process_class
-        
-        # Only catch exceptions at the top level (root_id == tr_id means this is the root transition)
-        # Nested transitions should propagate exceptions to their parents
-        is_root = kwargs.get('root_id') == tr_id
-        if is_root:
-            try:
+
+        # Set context so nested transitions (from callbacks) can inherit root_id/parent_id
+        token = _transition_context.set({
+            'root_id': kwargs['root_id'],
+            'tr_id': kwargs['tr_id'],
+        })
+        try:
+            # Only catch exceptions at the top level (root_id == tr_id means this is the root transition)
+            # Nested transitions should propagate exceptions to their parents
+            is_root = kwargs.get('root_id') == tr_id
+            if is_root:
+                try:
+                    return transition.change_state(self.state, **kwargs)
+                except Exception as e:
+                    transition_logger.error(
+                        f"{tr_id} {TransitionEventType.FAIL.value}: {type(e).__name__}: {e}",
+                        exc_info=True
+                    )
+                    # Do not re-raise the exception, just return the tr_id
+                    # We need this for backward compatibility with the old code for now
+                    return tr_id
+            else:
                 return transition.change_state(self.state, **kwargs)
-            except Exception as e:
-                transition_logger.error(
-                    f"{tr_id} {TransitionEventType.FAIL.value}: {type(e).__name__}: {e}",
-                    exc_info=True
-                )
-                # Do not re-raise the exception, just return the tr_id
-                # We need this for backward compatibility with the old code for now
-                return tr_id
-        else:
-            return transition.change_state(self.state, **kwargs)
+        finally:
+            _transition_context.reset(token)
 
     def is_valid(self, user=None) -> bool:
         """
@@ -146,12 +166,12 @@ class Process(object):
             if action_name is not None and transition.action_name != action_name:
                 continue
 
-            if self.state.cached_state in transition.sources and transition.is_valid(self.state.instance, user):
+            if getattr(self.state.instance, self.state.field_name) in transition.sources and transition.is_valid(self.state.instance, user):
                 yield transition
 
         for sub_process_class in self.nested_processes:
             sub_process = sub_process_class(state=self.state)
-            yield from sub_process.get_available_transitions(user=user, action_name=action_name)
+            yield from sub_process.get_available_transitions(user=user, action_name=action_name, ignore_state=ignore_state)
 
     def get_transition_by_action_name(self, action_name: str, user=None):
         transitions = list(self.get_available_transitions(action_name=action_name, user=user, ignore_state=True))
@@ -159,15 +179,10 @@ class Process(object):
             transition = transitions[0]
             # DEPRECATED
             self.logger.info(f"{self.state.instance_key}, process {self.process_name} "
-                             f"executes '{action_name}' transition from {self.state.cached_state} "
+                             f"executes '{action_name}' transition from {self.state.get_state()} "
                              f"to {transition.target}",
                              log_type=LogType.TRANSITION_DEBUG,
                              log_data=self.state.get_log_data())
-            logger.info(
-                f"{self.state.instance_key}, process {self.process_name} "
-                f"executes '{action_name}' transition from {self.state.cached_state} "
-                f"to {transition.target}"
-            )
             return transition
         elif len(transitions) > 1:
             # DEPRECATED

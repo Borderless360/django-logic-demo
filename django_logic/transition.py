@@ -109,7 +109,8 @@ class Transition(BaseTransition):
         process_class_name = process_class.split('.')[-1] if process_class else ''
         transition_logger.info(
             f'{kwargs.get("tr_id")} {TransitionEventType.START.value} {process_class_name} '
-            f'{self.action_name} {state.instance_key} {kwargs.get("root_id")} {kwargs.get("parent_id")}'
+            f'{self.action_name} {state.instance_key} {kwargs.get("root_id")} {kwargs.get("parent_id")}',
+            extra={'kwargs': kwargs, 'state_hash': state._get_hash()}
         )
 
         # Background Mode has two phases:
@@ -129,7 +130,7 @@ class Transition(BaseTransition):
 
                 raise TransitionNotAllowed("State is locked")
 
-            self._log_lock(kwargs)
+            transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.LOCK.value}')
             # DEPRECATED
             self.logger.info(f'{state.instance_key} has been locked',
                             log_type=LogType.TRANSITION_DEBUG,
@@ -142,22 +143,24 @@ class Transition(BaseTransition):
                 self.logger.info(f'{state.instance_key} state changed to {self.in_progress_state}',
                                 log_type=LogType.TRANSITION_DEBUG,
                                 log_data=log_data)
-
-                self._log_set_state(self.in_progress_state, kwargs)
+                transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.SET_STATE.value} {self.in_progress_state}')
 
         # Note: Only root transition can be run in background
         if kwargs.get('background_mode', False) \
         and not kwargs.get('background_mode_phase_2', False) \
         and kwargs.get('root_id') == kwargs.get('tr_id'): 
-            self._log_background_mode(kwargs)
+            transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.BACKGROUND_MODE.value}')
             self.run_in_background(state, **kwargs)
         else:
             self._init_transition_context(kwargs)
             try:
                 self.side_effects.execute(state, **kwargs)
             except Exception as e:
-                self._log_fail(kwargs, e)
-                raise e
+                transition_logger.error(
+                    f"{kwargs.get('tr_id')} {TransitionEventType.FAIL.value}: {type(e).__name__}: {e}",
+                    exc_info=True,
+                )
+                # raise
 
         return kwargs.get('tr_id', None)
 
@@ -176,15 +179,14 @@ class Transition(BaseTransition):
                          log_data=log_data)
 
         # TODO: I believe logs should be triggered into state methods instead of transition methods
-        self._log_set_state(self.target, kwargs)
+        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.SET_STATE.value} {self.target}')
 
         state.unlock()
         # DEPRECATED
         self.logger.info(f'{state.instance_key} has been unlocked',
                          log_type=LogType.TRANSITION_DEBUG,
                          log_data=state.get_log_data())
-
-        self._log_unlock(kwargs)
+        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.UNLOCK.value}')
 
         self.callbacks.execute(state, **kwargs)
         # TODO: Can we use a callback to execute the next transition instead?
@@ -210,8 +212,7 @@ class Transition(BaseTransition):
             self.logger.info(f'{state.instance_key} state changed to {self.failed_state}',
                              log_type=LogType.TRANSITION_FAILED,
                              log_data=log_data)
-
-            self._log_set_state(self.failed_state, kwargs)
+            transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.SET_STATE.value} {self.failed_state}')
 
         self.failure_side_effects.execute(state, exception=exception, **kwargs)
 
@@ -220,27 +221,9 @@ class Transition(BaseTransition):
         self.logger.info(f'{state.instance_key} has been unlocked',
                          log_type=LogType.TRANSITION_DEBUG,
                          log_data=state.get_log_data())
-
-        self._log_unlock(kwargs)
-        self.failure_callbacks.execute(state, exception=exception, **kwargs)
-    
-    def _log_set_state(self, state: str, kwargs: dict):
-        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.SET_STATE.value} {state}')
-
-    def _log_lock(self, kwargs: dict):
-        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.LOCK.value}')
-
-    def _log_unlock(self, kwargs: dict):
         transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.UNLOCK.value}')
 
-    def _log_background_mode(self, kwargs: dict):
-        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.BACKGROUND_MODE.value}')
-    
-    def _log_fail(self, kwargs: dict, exception: Exception):
-        transition_logger.error(
-            f"{kwargs.get('tr_id')} {TransitionEventType.FAIL.value}: {type(exception).__name__}: {exception}",
-            exc_info=True,
-        )
+        self.failure_callbacks.execute(state, exception=exception, **kwargs)
 
     @staticmethod
     def _init_transition_context(kwargs: dict) -> None:

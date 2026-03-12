@@ -69,7 +69,8 @@ class SideEffects(BaseCommand):
 
             logger.error(f'{kwargs.get("tr_id")} {error}')
             self._transition.fail_transition(state, error, **kwargs)
-            raise  # Re-raise the exception to propagate to parent transitions
+            # Re-raise the exception to propagate to parent transitions
+            # raise
         else:
             # DEPRECATED
             self.logger.info(f"{state.instance_key} side-effects of '{self._transition.action_name}' succeeded",
@@ -86,22 +87,19 @@ class Callbacks(BaseCommand):
         it will stop execution and send a message to the logger.
         Please note, it doesn't run failure callbacks in case of exception.
         """
-        # TODO: Crash of one callback shouldn't stop the execution of other callbacks.
+        logger.info(f'{kwargs.get("tr_id")} Callbacks {len(self._commands)}')
+        command_name = None
         try:
-            logger.info(f'{kwargs.get("tr_id")} Callbacks {len(self._commands)}')
             for command in self.commands:
-                logger.info(
-                    f'{kwargs.get("tr_id")} {TransitionEventType.CALLBACK.value} {command.__name__}'
-                )
+                command_name = command.__name__
+                logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.CALLBACK.value} {command_name}')
                 command(state.instance, **kwargs)
         except Exception as error:
             # DEPRECATED
             self.logger.info(f"{state.instance_key} callbacks of '{self._transition.action_name}` failed with {error}",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=state.get_log_data())
-            self.logger.error(error, log_type=LogType.TRANSITION_ERROR, log_data=state.get_log_data())
-
-            logger.error(error)
+                            log_type=LogType.TRANSITION_DEBUG,
+                            log_data=state.get_log_data())
+            logger.error(f'{kwargs.get("tr_id")} {TransitionEventType.CALLBACK.value} {command_name}: {error}', exc_info=True, extra={'kwargs': kwargs})
             # ignore any errors in callbacks
 
 
