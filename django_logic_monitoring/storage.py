@@ -183,6 +183,24 @@ class StatStore:
             return None
         return cls.get(stat_id.decode())
 
+    @classmethod
+    def clear_all(cls) -> int:
+        """Delete all stats, their lookup indices, and the counter."""
+        stat_ids = redis_client.smembers(cls.INDEX_KEY)
+        count = len(stat_ids)
+        keys_to_delete = [cls.INDEX_KEY, cls.COUNTER_KEY]
+
+        for sid in stat_ids:
+            sid_str = sid.decode()
+            keys_to_delete.append(cls._key(sid_str))
+
+        idx_keys = redis_client.keys(f"{cls._PREFIX}:idx:*")
+        keys_to_delete.extend(idx_keys)
+
+        if keys_to_delete:
+            redis_client.delete(*keys_to_delete)
+
+        return count
 
 class AnomalyStore:
     _PREFIX = f"{PREFIX}:anomaly"

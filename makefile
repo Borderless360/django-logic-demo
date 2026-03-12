@@ -64,8 +64,14 @@ test-x:
 
 dlm-check:
 	make manage s=demo c=dlm_e2e_check
+dlm-clear-stats:
+	make manage s=demo c=dlm_clear_stats
 
-autofixer-run:
-	docker compose -p $(PROJECT_NAME) exec demo python manage.py run_autofixer --interval 5
-autofixer-status:
-	docker compose -p $(PROJECT_NAME) exec demo python manage.py autofixer_status
+celery-tasks:
+	docker compose -p $(PROJECT_NAME) exec demo-worker celery -A demo.celery_app inspect registered
+celery-active:
+	docker compose -p $(PROJECT_NAME) exec demo-worker celery -A demo.celery_app inspect active
+celery-recent:
+	docker compose -p $(PROJECT_NAME) logs demo-worker --tail=500 --no-log-prefix | grep -E 'Task .+ (succeeded|failed|rejected|revoked)' | tail -20
+celery-schedule:
+	docker compose -p $(PROJECT_NAME) exec demo python -c "from demo.settings import CELERY_BEAT_SCHEDULE; import json; print(json.dumps(CELERY_BEAT_SCHEDULE, indent=2, default=str))"

@@ -114,3 +114,5 @@ Celery worker where running main task
 **dlm_get_current_transitions** return active transitions with states
 **dlm_fetch_logs** run fetch_logs action
 **dlm_detect_anomaly** run detect_anomaly action
+**dlm_e2e_check** E2E check: reset state, process logs, show results
+**dlm_clear_stats** clear all collected execution-time statistics
