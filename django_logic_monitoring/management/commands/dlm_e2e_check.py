@@ -16,18 +16,18 @@ DLM_KEYS_PATTERN = "dlm:*"
 class Command(BaseCommand):
     help = (
         "E2E check for django_logic_monitoring: "
-        "clear DLM state, process all ClickHouse logs, show results"
+        "process all ClickHouse logs, show results"
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--no-clear",
+            "--clear",
             action="store_true",
-            help="Skip clearing DLM Redis state before processing",
+            help="Clear DLM Redis state before processing",
         )
 
     def handle(self, *args, **options):
-        if not options["no_clear"]:
+        if options["clear"]:
             self._clear_dlm_keys()
 
         self.stdout.write("\n--- fetch_logs ---")

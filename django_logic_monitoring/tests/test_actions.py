@@ -9,7 +9,7 @@ from django_logic_monitoring.actions import (
     detect_anomaly,
     fetch_logs,
 )
-from django_logic_monitoring.config import DLM_DEFAULT_TIME_LIMIT
+from django_logic_monitoring.config import DLM_DEFAULT_TIME_LIMIT, DLM_LOG_PAGE_SIZE
 from django_logic_monitoring.storage import (
     AnomalyStore,
     LastLogTimestamp,
@@ -138,7 +138,7 @@ class TestFetchLogs:
         saved_ts = datetime(2025, 6, 15, 9, 0, 0)
         LastLogTimestamp.set(saved_ts)
         fetch_logs()
-        mock_fetch.assert_called_once_with(saved_ts)
+        mock_fetch.assert_called_once_with(saved_ts, limit=DLM_LOG_PAGE_SIZE)
 
     @patch("django_logic_monitoring.actions.fetch_logs_since")
     def test_ignores_events_for_unknown_transitions(self, mock_fetch):
@@ -160,6 +160,47 @@ class TestFetchLogs:
         ]
         fetch_logs()
         assert len(TransitionStore.get_all()) == 2
+
+    @patch("django_logic_monitoring.actions.DLM_LOG_PAGE_SIZE", 3)
+    @patch("django_logic_monitoring.actions.fetch_logs_since")
+    def test_fetches_multiple_pages(self, mock_fetch):
+        t = datetime(2025, 6, 15, 10, 0, 0)
+        all_logs = [
+            _make_log("tr-001 Start P a app-m-f-1 tr-001 tr-001", t),
+            _make_log("tr-001 Lock", t + timedelta(seconds=1)),
+            _make_log("tr-001 Unlock", t + timedelta(seconds=2)),
+        ]
+
+        def fake_fetch(since, *, limit=None):
+            result = [e for e in all_logs if since is None or e["timestamp"] > since]
+            return result[:limit] if limit else result
+
+        mock_fetch.side_effect = fake_fetch
+        fetch_logs()
+        assert TransitionStore.get_all() == []
+        assert LastLogTimestamp.get() == t + timedelta(seconds=2)
+        assert mock_fetch.call_count == 2
+
+    @patch("django_logic_monitoring.actions.DLM_LOG_PAGE_SIZE", 2)
+    @patch("django_logic_monitoring.actions.fetch_logs_since")
+    def test_pagination_does_not_skip_duplicate_timestamps(self, mock_fetch):
+        t = datetime(2025, 6, 15, 10, 0, 0)
+        all_logs = [
+            _make_log("tr-001 Start P a app-m-f-1 tr-001 tr-001", t),
+            _make_log("tr-001 Lock", t + timedelta(seconds=1)),
+            _make_log("tr-001 SideEffects 1", t + timedelta(seconds=1)),
+            _make_log("tr-001 SideEffect handler", t + timedelta(seconds=2)),
+            _make_log("tr-001 Unlock", t + timedelta(seconds=3)),
+        ]
+
+        def fake_fetch(since, *, limit=None):
+            result = [e for e in all_logs if since is None or e["timestamp"] > since]
+            return result[:limit] if limit else result
+
+        mock_fetch.side_effect = fake_fetch
+        fetch_logs()
+        assert TransitionStore.get_all() == []
+        assert LastLogTimestamp.get() == t + timedelta(seconds=3)
 
 
 # ── _remove_completed_transitions ────────────────────────────────────────────

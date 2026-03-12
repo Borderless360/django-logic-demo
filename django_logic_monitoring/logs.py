@@ -9,7 +9,7 @@ def _get_client():
     return import_string(DLM_CLICKHOUSE_CLIENT_PATH)
 
 
-def fetch_logs_since(since: datetime | None = None) -> list[dict]:
+def fetch_logs_since(since: datetime | None = None, *, limit: int | None = None) -> list[dict]:
     """Fetch transition logs from ClickHouse since the given timestamp."""
     ch = _get_client()
 
@@ -27,6 +27,9 @@ def fetch_logs_since(since: datetime | None = None) -> list[dict]:
             "WHERE name = 'django-logic.transition' "
             "ORDER BY _timestamp"
         )
+
+    if limit is not None:
+        query += f" LIMIT {limit}"
 
     result = ch.query(query)
     return [

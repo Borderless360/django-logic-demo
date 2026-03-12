@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from django_logic_monitoring.config import DLM_DEFAULT_TIME_LIMIT
+from django_logic_monitoring.config import DLM_DEFAULT_TIME_LIMIT, DLM_LOG_PAGE_SIZE
 from django_logic_monitoring.logs import fetch_logs_since
 from django_logic_monitoring.storage import (
     AnomalyStore,
@@ -133,97 +133,118 @@ def _remove_completed_transitions():
 
 
 def fetch_logs():
-    """Read logs → update transitions → remove completed → update stats."""
+    """Read logs page by page → update transitions → remove completed → update stats."""
     last_ts = LastLogTimestamp.get()
-    logs = fetch_logs_since(last_ts)
 
-    if not logs:
-        logger.info("No new logs found")
-        return
-
-    logger.info("Processing %d new log entries", len(logs))
-
+    total_processed = 0
     # {tr_id: {step_type, step_name, start_time}} — tracks the currently
     # executing step so we can compute its duration when the next event arrives.
     active_steps: dict[str, dict] = {}
     stat_updates: list[tuple] = []
 
-    for entry in logs:
-        message = entry["message"]
-        timestamp = entry["timestamp"]
-        event = _parse_log(message)
-        if not event:
-            continue
+    while True:
+        page = fetch_logs_since(last_ts, limit=DLM_LOG_PAGE_SIZE)
+        if not page:
+            break
 
-        tr_id = event["tr_id"]
+        is_last_page = len(page) < DLM_LOG_PAGE_SIZE
 
-        # Close any previously active step for this transition
-        if tr_id in active_steps:
-            prev = active_steps.pop(tr_id)
-            tr_data = TransitionStore.get(tr_id)
-            if tr_data and prev["step_name"] and "process" in tr_data:
-                duration = (timestamp - prev["start_time"]).total_seconds()
-                if duration > 0:
-                    stat_updates.append((
-                        tr_data["process"],
-                        tr_data.get("action", ""),
-                        prev["step_type"],
-                        prev["step_name"],
-                        duration,
-                    ))
+        # On a full page the LIMIT may split rows that share the boundary
+        # timestamp.  Trim that trailing group so the next iteration re-fetches
+        # all of them.  Skip the trim only when every row in the page already
+        # shares the same timestamp (nothing to trim — process them all).
+        if not is_last_page and page[0]["timestamp"] != page[-1]["timestamp"]:
+            boundary_ts = page[-1]["timestamp"]
+            page = [e for e in page if e["timestamp"] < boundary_ts]
 
-        if event["type"] == "Start":
-            model_name, field_name, object_id = _parse_instance_key(event["instance_key"])
-            TransitionStore.create(
-                tr_id=tr_id,
-                process=event["process"],
-                action=event["action"],
-                model_name=model_name,
-                object_id=object_id,
-                field_name=field_name,
-                root_id=event["root_id"],
-                parent_id=event["parent_id"],
-                timestamp=timestamp,
-            )
+        logger.info("Processing page of %d log entries", len(page))
 
-        elif event["type"] in GROUP_EVENTS:
-            if TransitionStore.exists(tr_id):
-                TransitionStore.update(
-                    tr_id,
-                    steps=str(event["count"]),
-                    step_type=GROUP_TO_STEP[event["type"]],
-                    step_n="0",
-                    timestamp=timestamp,
-                )
+        for entry in page:
+            message = entry["message"]
+            timestamp = entry["timestamp"]
+            event = _parse_log(message)
+            if not event:
+                continue
 
-        elif event["type"] in STEP_EVENTS:
-            if TransitionStore.exists(tr_id):
+            tr_id = event["tr_id"]
+
+            if tr_id in active_steps:
+                prev = active_steps.pop(tr_id)
                 tr_data = TransitionStore.get(tr_id)
-                new_step_n = int(tr_data.get("step_n", "0")) + 1
-                TransitionStore.update(
-                    tr_id,
-                    step_n=str(new_step_n),
-                    step_type=event["type"],
-                    step_name=event["name"],
+                if tr_data and prev["step_name"] and "process" in tr_data:
+                    duration = (timestamp - prev["start_time"]).total_seconds()
+                    if duration > 0:
+                        stat_updates.append((
+                            tr_data["process"],
+                            tr_data.get("action", ""),
+                            prev["step_type"],
+                            prev["step_name"],
+                            duration,
+                        ))
+
+            if event["type"] == "Start":
+                model_name, field_name, object_id = _parse_instance_key(event["instance_key"])
+                TransitionStore.create(
+                    tr_id=tr_id,
+                    process=event["process"],
+                    action=event["action"],
+                    model_name=model_name,
+                    object_id=object_id,
+                    field_name=field_name,
+                    root_id=event["root_id"],
+                    parent_id=event["parent_id"],
                     timestamp=timestamp,
                 )
-                active_steps[tr_id] = {
-                    "step_type": event["type"],
-                    "step_name": event["name"],
-                    "start_time": timestamp,
-                }
 
-        elif event["type"] == "Unlock":
-            if TransitionStore.exists(tr_id):
-                TransitionStore.update(tr_id, is_completed=True, timestamp=timestamp)
+            elif event["type"] in GROUP_EVENTS:
+                if TransitionStore.exists(tr_id):
+                    TransitionStore.update(
+                        tr_id,
+                        steps=str(event["count"]),
+                        step_type=GROUP_TO_STEP[event["type"]],
+                        step_n="0",
+                        timestamp=timestamp,
+                    )
 
-        elif event["type"] == "Fail":
-            if TransitionStore.exists(tr_id):
-                TransitionStore.update(tr_id, is_completed=True, timestamp=timestamp)
+            elif event["type"] in STEP_EVENTS:
+                if TransitionStore.exists(tr_id):
+                    tr_data = TransitionStore.get(tr_id)
+                    new_step_n = int(tr_data.get("step_n", "0")) + 1
+                    TransitionStore.update(
+                        tr_id,
+                        step_n=str(new_step_n),
+                        step_type=event["type"],
+                        step_name=event["name"],
+                        timestamp=timestamp,
+                    )
+                    active_steps[tr_id] = {
+                        "step_type": event["type"],
+                        "step_name": event["name"],
+                        "start_time": timestamp,
+                    }
 
-        elif event["type"] in ("SetState", "Lock", "BackgroundMode", "NextTransition"):
-            if TransitionStore.exists(tr_id):
-                TransitionStore.update(tr_id, timestamp=timestamp)
+            elif event["type"] == "Unlock":
+                if TransitionStore.exists(tr_id):
+                    TransitionStore.update(tr_id, is_completed=True, timestamp=timestamp)
+
+            elif event["type"] == "Fail":
+                if TransitionStore.exists(tr_id):
+                    TransitionStore.update(tr_id, is_completed=True, timestamp=timestamp)
+
+            elif event["type"] in ("SetState", "Lock", "BackgroundMode", "NextTransition"):
+                if TransitionStore.exists(tr_id):
+                    TransitionStore.update(tr_id, timestamp=timestamp)
+
+        total_processed += len(page)
+        last_ts = page[-1]["timestamp"]
+        LastLogTimestamp.set(last_ts)
+
+        if is_last_page:
+            break
+
+    if total_processed == 0:
+        logger.info("No new logs found")
+        return
 
     _remove_completed_transitions()
 
@@ -231,8 +252,7 @@ def fetch_logs():
         stat_id = StatStore.get_or_create(process, action, step_type, step_name)
         StatStore.add_execution(stat_id, duration)
 
-    LastLogTimestamp.set(logs[-1]["timestamp"])
-    logger.info("Processed %d log entries, stat updates: %d", len(logs), len(stat_updates))
+    logger.info("Processed %d log entries, stat updates: %d", total_processed, len(stat_updates))
 
 
 def detect_anomaly():
