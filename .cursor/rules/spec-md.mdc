@@ -1,0 +1,118 @@
+---
+description: Guidelines for writing spec.md — a concise app specification
+globs: **/spec.md
+alwaysApply: false
+---
+
+# Writing spec.md
+
+spec.md is a concise, structured specification of a Django app (or module).
+It answers **what** the app does, not **how** it is implemented.
+
+## File Structure
+
+```
+# <App Name>
+Short description (1-2 sentences)
+
+-------------------------------------------------------------------------------
+# Data Models
+
+-------------------------------------------------------------------------------
+# Business Rules
+
+-------------------------------------------------------------------------------
+# Runtime
+
+-------------------------------------------------------------------------------
+# Others
+```
+
+Use `---...---` horizontal separators between top-level sections.
+
+## Data Models
+
+Order models by importance: core entities first, then dependencies.
+
+Add a legend at the top of the section:
+
+```
+type? - not required
+-> one to many
+-- one to one
+```
+
+Each model follows this template:
+
+```
+## <ModelName>
+Brief description (1 sentence)
+**Source:** <external source>        ← only if data comes from outside
+**Storage** <redis | db | Django settings | etc.>
+**Fields**
+- field_name    type - optional comment
+- other_field   -> OtherModel
+**Constraints**
+- constraint description
+```
+
+Rules:
+- Field lines are aligned for readability
+- Use `->` for FK / one-to-many, `--` for one-to-one
+- Append `?` to type if the field is optional
+- **Constraints** lists domain invariants, not DB-level details
+- Omit **Source** if the model is owned by the app
+- Omit **Constraints** if there are none
+
+## Business Rules
+
+### Jobs
+Scheduled or event-driven tasks. Format:
+
+```
+- <job_name> | <trigger>: <schedule or event> | <what it does>
+```
+
+### Processes / Actions
+Group actions under a named process. Each action lists steps with `do:` (inside transaction) and `then:` (after transaction commits):
+
+```
+## <Process Name>
+**Actions**
+- *action_name*
+  do: step one
+  do: step two
+  then: post-commit side effect
+```
+
+Rules:
+- Action names are in *italics*
+- `do:` — logical step inside the transaction; keep it short
+- `then:` — action after the transaction (notifications, external calls, etc.)
+- Describe intent, not implementation
+
+## Runtime
+
+Logical units that compose the running service.
+Describe **what** must be running, not how it is deployed.
+
+```
+## <unit-name>
+Brief description of the runtime unit
+```
+
+## Others
+
+Anything that doesn't fit above: management commands, CLI tools, notes.
+
+```
+## Django manager commands
+**command_name** short description
+```
+
+## General Guidelines
+
+- Keep the entire file under 200 lines
+- Write from a domain perspective, avoid code-level details
+- Use plain text and lightweight markdown; no tables unless truly needed
+- Every section heading uses `#` for top-level, `##` for entities/subsections

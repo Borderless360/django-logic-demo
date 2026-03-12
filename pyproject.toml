@@ -42,6 +42,7 @@ testpaths = [
     "locker/e2e",
     "invoice/e2e",
     "autofixer/tests",
+    "django_logic_monitoring/tests",
 ]
 python_files = ["test_*.py", ]
 DJANGO_SETTINGS_MODULE = "demo.settings"

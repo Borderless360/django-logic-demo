@@ -19,6 +19,8 @@ info:
 	@echo "  test_locker   : Run locker tests"
 	@echo "  test_abstract : Run abstract tests"
 	@echo "  test          : Run all tests"
+	@echo ""
+	@echo "  dlm-check     : Check DLM monitoring (clear state, process CH logs, show results)"
 
 build:
 	export DOCKER_BUILDKIT=1 && \
@@ -59,6 +61,9 @@ test-one:
 
 test-x:
 	make test-one t=abstract/e2e/test_basic.py::test_transition_with_failed_callback
+
+dlm-check:
+	make manage s=demo c=dlm_e2e_check
 
 autofixer-run:
 	docker compose -p $(PROJECT_NAME) exec demo python manage.py run_autofixer --interval 5
