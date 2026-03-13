@@ -1,14 +1,21 @@
 import json
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
-from django_logic_monitoring.config import DLM_DEFAULT_TIME_LIMIT, DLM_MIN_EXECUTIONS
+from django_logic_monitoring.config import (
+    DLM_DEFAULT_TIME_LIMIT,
+    DLM_FAILURE_WINDOW,
+    DLM_LOOP_WINDOW,
+    DLM_MIN_EXECUTIONS,
+)
 from django_logic_monitoring.storage import (
     AnomalyStore,
     AnomalyType,
+    FailureCounterStore,
     LastLogTimestamp,
+    LoopCounterStore,
     StatStore,
     TransitionStore,
 )
@@ -254,3 +261,69 @@ class TestAnomalyStore:
 
     def test_get_all_empty(self):
         assert AnomalyStore.get_all() == []
+
+
+# ── FailureCounterStore ──────────────────────────────────────────────────────
+
+
+class TestFailureCounterStore:
+    def test_record_and_count(self):
+        now = datetime(2025, 6, 15, 10, 0, 0)
+        FailureCounterStore.record("P", "a", now)
+        assert FailureCounterStore.get_count("P", "a", now) == 1
+
+    def test_multiple_records(self):
+        now = datetime(2025, 6, 15, 10, 0, 0)
+        for i in range(5):
+            FailureCounterStore.record("P", "a", now + timedelta(seconds=i))
+        assert FailureCounterStore.get_count("P", "a", now + timedelta(seconds=4)) == 5
+
+    def test_prunes_old_timestamps(self):
+        old = datetime(2025, 6, 15, 10, 0, 0)
+        recent = old + timedelta(seconds=DLM_FAILURE_WINDOW + 1)
+        FailureCounterStore.record("P", "a", old)
+        FailureCounterStore.record("P", "a", recent)
+        assert FailureCounterStore.get_count("P", "a", recent) == 1
+
+    def test_different_keys_independent(self):
+        now = datetime(2025, 6, 15, 10, 0, 0)
+        FailureCounterStore.record("P1", "a", now)
+        FailureCounterStore.record("P2", "a", now)
+        assert FailureCounterStore.get_count("P1", "a", now) == 1
+        assert FailureCounterStore.get_count("P2", "a", now) == 1
+
+    def test_empty_count(self):
+        assert FailureCounterStore.get_count("X", "X") == 0
+
+
+# ── LoopCounterStore ─────────────────────────────────────────────────────────
+
+
+class TestLoopCounterStore:
+    def test_record_and_count(self):
+        now = datetime(2025, 6, 15, 10, 0, 0)
+        LoopCounterStore.record("m", "1", "P", "a", now)
+        assert LoopCounterStore.get_count("m", "1", "P", "a", now) == 1
+
+    def test_multiple_records(self):
+        now = datetime(2025, 6, 15, 10, 0, 0)
+        for i in range(5):
+            LoopCounterStore.record("m", "1", "P", "a", now + timedelta(seconds=i))
+        assert LoopCounterStore.get_count("m", "1", "P", "a", now + timedelta(seconds=4)) == 5
+
+    def test_prunes_old_timestamps(self):
+        old = datetime(2025, 6, 15, 10, 0, 0)
+        recent = old + timedelta(seconds=DLM_LOOP_WINDOW + 1)
+        LoopCounterStore.record("m", "1", "P", "a", old)
+        LoopCounterStore.record("m", "1", "P", "a", recent)
+        assert LoopCounterStore.get_count("m", "1", "P", "a", recent) == 1
+
+    def test_different_keys_independent(self):
+        now = datetime(2025, 6, 15, 10, 0, 0)
+        LoopCounterStore.record("m", "1", "P", "a", now)
+        LoopCounterStore.record("m", "2", "P", "a", now)
+        assert LoopCounterStore.get_count("m", "1", "P", "a", now) == 1
+        assert LoopCounterStore.get_count("m", "2", "P", "a", now) == 1
+
+    def test_empty_count(self):
+        assert LoopCounterStore.get_count("X", "X", "X", "X") == 0

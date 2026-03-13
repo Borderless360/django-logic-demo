@@ -58,6 +58,30 @@ Execution time for actions/transitions and their side effects (no callbacks)
 - process, action, step_type, step_name - unique together
 - time_limit is computed only when last_exec has at least DLM_MIN_EXECUTIONS items
 
+## FailureCounter
+Rolling failure counter per process + action
+**Storage** redis
+**Fields**
+- process       str
+- action        str
+- timestamps    list of datetime - failure timestamps within the sliding window
+**Constraints**
+- process, action - unique together
+- timestamps older than DLM_FAILURE_WINDOW are pruned on each update
+
+## LoopCounter
+Rolling counter of transition starts per object + process + action
+**Storage** redis
+**Fields**
+- model_name    str
+- object_id     str
+- process       str
+- action        str
+- timestamps    list of datetime - start timestamps within the sliding window
+**Constraints**
+- model_name, object_id, process, action - unique together
+- timestamps older than DLM_LOOP_WINDOW are pruned on each update
+
 ## AnomalyType
 **Storage** python enum
 - id            number 
@@ -88,6 +112,12 @@ The fact of catch an anomaly into the transition.
 - DLM_MAX_EXECUTIONS          number - max execution times kept per Stat record (default 50)
 - DLM_MAX_PAGES_PER_RUN       number - max log pages fetched per single monitoring run (default 50)
 - DLM_MONITORING_SINCE        datetime? - ignore logs before this timestamp
+- DLM_STUCK_TIMEOUT           number - seconds without events before transition is considered stuck (default 600)
+- DLM_FAILURE_WINDOW          number - sliding window in seconds for counting failures (default 300)
+- DLM_FAILURE_THRESHOLD       number - failure count within window to trigger anomaly (default 3)
+- DLM_DEGRADATION_RATIO       number - ratio of recent-half mean to older-half mean that triggers anomaly (default 2.0)
+- DLM_LOOP_WINDOW             number - sliding window in seconds for loop detection (default 300)
+- DLM_LOOP_THRESHOLD          number - repeated entries within window to trigger anomaly (default 5)
 
 -------------------------------------------------------------------------------
 # Business Rules
@@ -105,7 +135,11 @@ Defines *what* should happen and *when* (business rule).
   do: remove completed transitions (with or without errors)
   do: update stats
 - *detect_anomaly*
-  do: detect `logn execution` anomaly
+  do: detect `long execution` anomaly
+  do: detect `stuck transition` anomaly
+  do: detect `frequent failures` anomaly
+  do: detect `execution time degradation` anomaly
+  do: detect `loop detection` anomaly
   do: send notification to console about new anomaly
 - *clear*
   do: remove completed transitions
@@ -115,6 +149,24 @@ Defines *what* should happen and *when* (business rule).
 **Long execution**
 Anomaly long execution of side effects based on statistics of previous runs,
 deviation > 2σ from the mean, minimum DLM_MIN_EXECUTIONS records
+
+**Stuck transition**
+Transition has not received any new events for longer than expected but is not completed.
+Compares now - transition.timestamp against a configurable timeout (DLM_STUCK_TIMEOUT).
+
+**Frequent failures**
+Same process + action fails multiple times within a sliding time window (DLM_FAILURE_WINDOW).
+Triggered when failure count exceeds DLM_FAILURE_THRESHOLD within the window.
+
+**Execution time degradation**
+Mean execution time of a step is trending upward.
+Compares mean of recent half of last_exec vs older half; triggers when ratio exceeds DLM_DEGRADATION_RATIO.
+Requires at least DLM_MIN_EXECUTIONS records.
+
+**Loop detection**
+Same object (model_name + object_id) enters the same process + action repeatedly
+within a sliding time window (DLM_LOOP_WINDOW).
+Triggered when count exceeds DLM_LOOP_THRESHOLD within the window.
 
 -------------------------------------------------------------------------------
 # Runtime

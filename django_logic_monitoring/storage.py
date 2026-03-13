@@ -1,12 +1,14 @@
 import json
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import IntEnum
 
 from core.redis import redis_client
 
 from django_logic_monitoring.config import (
     DLM_DEFAULT_TIME_LIMIT,
+    DLM_FAILURE_WINDOW,
+    DLM_LOOP_WINDOW,
     DLM_MAX_EXECUTIONS,
     DLM_MIN_EXECUTIONS,
 )
@@ -14,6 +16,10 @@ from django_logic_monitoring.config import (
 
 class AnomalyType(IntEnum):
     LONG_EXECUTION = 1
+    STUCK_TRANSITION = 2
+    FREQUENT_FAILURES = 3
+    EXECUTION_TIME_DEGRADATION = 4
+    LOOP_DETECTION = 5
 
 PREFIX = "dlm"
 
@@ -206,6 +212,70 @@ class StatStore:
             redis_client.delete(*keys_to_delete)
 
         return count
+
+class FailureCounterStore:
+    _PREFIX = f"{PREFIX}:failcnt"
+
+    @classmethod
+    def _key(cls, process, action):
+        return f"{cls._PREFIX}:{process}:{action}"
+
+    @classmethod
+    def record(cls, process: str, action: str, timestamp: datetime):
+        """Append a failure timestamp and prune entries outside the window."""
+        key = cls._key(process, action)
+        raw = redis_client.get(key)
+        timestamps: list[str] = json.loads(raw.decode()) if raw else []
+        cutoff = (timestamp - timedelta(seconds=DLM_FAILURE_WINDOW)).isoformat()
+        timestamps = [ts for ts in timestamps if ts > cutoff]
+        timestamps.append(timestamp.isoformat())
+        redis_client.set(key, json.dumps(timestamps))
+
+    @classmethod
+    def get_count(cls, process: str, action: str, now: datetime | None = None) -> int:
+        """Return the number of failures within the sliding window."""
+        key = cls._key(process, action)
+        raw = redis_client.get(key)
+        if not raw:
+            return 0
+        timestamps: list[str] = json.loads(raw.decode())
+        ref = now or datetime.now()
+        cutoff = (ref - timedelta(seconds=DLM_FAILURE_WINDOW)).isoformat()
+        return sum(1 for ts in timestamps if ts > cutoff)
+
+
+class LoopCounterStore:
+    _PREFIX = f"{PREFIX}:loopcnt"
+
+    @classmethod
+    def _key(cls, model_name, object_id, process, action):
+        return f"{cls._PREFIX}:{model_name}:{object_id}:{process}:{action}"
+
+    @classmethod
+    def record(cls, model_name: str, object_id: str, process: str, action: str,
+               timestamp: datetime):
+        """Append a start timestamp and prune entries outside the window."""
+        key = cls._key(model_name, object_id, process, action)
+        raw = redis_client.get(key)
+        timestamps: list[str] = json.loads(raw.decode()) if raw else []
+        cutoff = (timestamp - timedelta(seconds=DLM_LOOP_WINDOW)).isoformat()
+        timestamps = [ts for ts in timestamps if ts > cutoff]
+        timestamps.append(timestamp.isoformat())
+        redis_client.set(key, json.dumps(timestamps))
+
+    @classmethod
+    def get_count(cls, model_name: str, object_id: str, process: str, action: str,
+                  now: datetime | None = None) -> int:
+        """Return the number of starts within the sliding window."""
+        key = cls._key(model_name, object_id, process, action)
+        raw = redis_client.get(key)
+        if not raw:
+            return 0
+        timestamps: list[str] = json.loads(raw.decode())
+        ref = now or datetime.now()
+        cutoff = (ref - timedelta(seconds=DLM_LOOP_WINDOW)).isoformat()
+        return sum(1 for ts in timestamps if ts > cutoff)
+
 
 class AnomalyStore:
     _PREFIX = f"{PREFIX}:anomaly"

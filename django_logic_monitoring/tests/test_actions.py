@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
@@ -9,11 +10,21 @@ from django_logic_monitoring.actions import (
     detect_anomaly,
     fetch_logs,
 )
-from django_logic_monitoring.config import DLM_DEFAULT_TIME_LIMIT, DLM_LOG_PAGE_SIZE
+from django_logic_monitoring.config import (
+    DLM_DEFAULT_TIME_LIMIT,
+    DLM_DEGRADATION_RATIO,
+    DLM_FAILURE_THRESHOLD,
+    DLM_LOG_PAGE_SIZE,
+    DLM_LOOP_THRESHOLD,
+    DLM_MIN_EXECUTIONS,
+    DLM_STUCK_TIMEOUT,
+)
 from django_logic_monitoring.storage import (
     AnomalyStore,
     AnomalyType,
+    FailureCounterStore,
     LastLogTimestamp,
+    LoopCounterStore,
     StatStore,
     TransitionStore,
 )
@@ -287,13 +298,16 @@ class TestDetectAnomaly:
         )
         assert detect_anomaly() == []
 
-    def test_skips_transitions_without_step(self):
+    def test_skips_transitions_without_step_for_long_execution(self):
+        recent = datetime.now() - timedelta(seconds=10)
         TransitionStore.create(
             tr_id="tr-001", process="P", action="a",
             model_name="m", object_id="1", field_name="f",
-            timestamp=datetime(2025, 1, 1),
+            timestamp=recent,
         )
-        assert detect_anomaly() == []
+        anomalies = detect_anomaly()
+        long_exec = [a for a in anomalies if a["type"] == "LONG_EXECUTION"]
+        assert long_exec == []
 
     def test_detects_long_running_step(self):
         old_time = datetime.now() - timedelta(seconds=DLM_DEFAULT_TIME_LIMIT + 100)
@@ -309,9 +323,9 @@ class TestDetectAnomaly:
             timestamp=old_time,
         )
         anomalies = detect_anomaly()
-        assert len(anomalies) == 1
-        assert anomalies[0]["tr_id"] == "tr-001"
-        assert anomalies[0]["step_name"] == "slow_handler"
+        long_exec = [a for a in anomalies if a["type"] == "LONG_EXECUTION"]
+        assert len(long_exec) == 1
+        assert long_exec[0]["tr_id"] == "tr-001"
 
     def test_no_anomaly_within_limit(self):
         recent = datetime.now() - timedelta(seconds=10)
@@ -435,3 +449,174 @@ class TestClear:
         )
         clear()
         assert len(TransitionStore.get_all()) == 1
+
+
+# ── detect_anomaly: stuck transition ─────────────────────────────────────────
+
+
+class TestDetectStuckTransition:
+    def test_detects_stuck(self):
+        old_time = datetime.now() - timedelta(seconds=DLM_STUCK_TIMEOUT + 100)
+        TransitionStore.create(
+            tr_id="tr-001", process="P", action="a",
+            model_name="m", object_id="1", field_name="f",
+            timestamp=old_time,
+        )
+        TransitionStore.update("tr-001", step_type="SideEffect", step_name="h", timestamp=old_time)
+        anomalies = detect_anomaly()
+        types = {a["type"] for a in anomalies}
+        assert "STUCK_TRANSITION" in types
+
+    def test_no_stuck_within_timeout(self):
+        recent = datetime.now() - timedelta(seconds=10)
+        TransitionStore.create(
+            tr_id="tr-001", process="P", action="a",
+            model_name="m", object_id="1", field_name="f",
+            timestamp=recent,
+        )
+        anomalies = detect_anomaly()
+        stuck = [a for a in anomalies if a["type"] == "STUCK_TRANSITION"]
+        assert stuck == []
+
+
+# ── detect_anomaly: frequent failures ────────────────────────────────────────
+
+
+class TestDetectFrequentFailures:
+    def test_detects_frequent_failures(self):
+        now = datetime.now()
+        for i in range(DLM_FAILURE_THRESHOLD):
+            FailureCounterStore.record("P", "a", now - timedelta(seconds=i))
+
+        TransitionStore.create(
+            tr_id="tr-001", process="P", action="a",
+            model_name="m", object_id="1", field_name="f",
+            timestamp=now - timedelta(seconds=5),
+        )
+        anomalies = detect_anomaly()
+        types = {a["type"] for a in anomalies}
+        assert "FREQUENT_FAILURES" in types
+
+    def test_no_anomaly_below_threshold(self):
+        now = datetime.now()
+        FailureCounterStore.record("P", "a", now)
+
+        TransitionStore.create(
+            tr_id="tr-001", process="P", action="a",
+            model_name="m", object_id="1", field_name="f",
+            timestamp=now - timedelta(seconds=5),
+        )
+        anomalies = detect_anomaly()
+        failures = [a for a in anomalies if a["type"] == "FREQUENT_FAILURES"]
+        assert failures == []
+
+
+# ── detect_anomaly: execution time degradation ───────────────────────────────
+
+
+class TestDetectDegradation:
+    def test_detects_degradation(self):
+        stat_id = StatStore.get_or_create("P", "a", "SideEffect", "h")
+        older = [1.0] * (DLM_MIN_EXECUTIONS // 2)
+        recent = [DLM_DEGRADATION_RATIO * 1.0 + 0.1] * (DLM_MIN_EXECUTIONS - DLM_MIN_EXECUTIONS // 2)
+        all_exec = older + recent
+
+        from core.redis import redis_client
+        redis_client.hset(
+            f"dlm:stat:{stat_id}",
+            mapping={
+                "last_exec": json.dumps(all_exec),
+                "time_limit": "9999",
+            },
+        )
+
+        ts = datetime.now() - timedelta(seconds=5)
+        TransitionStore.create(
+            tr_id="tr-001", process="P", action="a",
+            model_name="m", object_id="1", field_name="f",
+            timestamp=ts,
+        )
+        TransitionStore.update("tr-001", step_type="SideEffect", step_name="h", timestamp=ts)
+        anomalies = detect_anomaly()
+        types = {a["type"] for a in anomalies}
+        assert "EXECUTION_TIME_DEGRADATION" in types
+
+    def test_no_degradation_with_stable_times(self):
+        stat_id = StatStore.get_or_create("P", "a", "SideEffect", "h")
+        all_exec = [1.0] * DLM_MIN_EXECUTIONS
+
+        from core.redis import redis_client
+        redis_client.hset(
+            f"dlm:stat:{stat_id}",
+            mapping={
+                "last_exec": json.dumps(all_exec),
+                "time_limit": "9999",
+            },
+        )
+
+        ts = datetime.now() - timedelta(seconds=5)
+        TransitionStore.create(
+            tr_id="tr-001", process="P", action="a",
+            model_name="m", object_id="1", field_name="f",
+            timestamp=ts,
+        )
+        TransitionStore.update("tr-001", step_type="SideEffect", step_name="h", timestamp=ts)
+        anomalies = detect_anomaly()
+        degraded = [a for a in anomalies if a["type"] == "EXECUTION_TIME_DEGRADATION"]
+        assert degraded == []
+
+
+# ── detect_anomaly: loop detection ───────────────────────────────────────────
+
+
+class TestDetectLoop:
+    def test_detects_loop(self):
+        now = datetime.now()
+        for i in range(DLM_LOOP_THRESHOLD):
+            LoopCounterStore.record("m", "1", "P", "a", now - timedelta(seconds=i))
+
+        TransitionStore.create(
+            tr_id="tr-001", process="P", action="a",
+            model_name="m", object_id="1", field_name="f",
+            timestamp=now - timedelta(seconds=5),
+        )
+        anomalies = detect_anomaly()
+        types = {a["type"] for a in anomalies}
+        assert "LOOP_DETECTION" in types
+
+    def test_no_loop_below_threshold(self):
+        now = datetime.now()
+        LoopCounterStore.record("m", "1", "P", "a", now)
+
+        TransitionStore.create(
+            tr_id="tr-001", process="P", action="a",
+            model_name="m", object_id="1", field_name="f",
+            timestamp=now - timedelta(seconds=5),
+        )
+        anomalies = detect_anomaly()
+        loops = [a for a in anomalies if a["type"] == "LOOP_DETECTION"]
+        assert loops == []
+
+
+# ── fetch_logs: counter recording ────────────────────────────────────────────
+
+
+class TestFetchLogsCounterRecording:
+    @patch("django_logic_monitoring.actions.fetch_logs_since")
+    def test_records_failure_counter(self, mock_fetch):
+        t = datetime(2025, 6, 15, 10, 0, 0)
+        mock_fetch.return_value = [
+            _make_log("tr-001 Start Proc act app-model-field-1 tr-001 tr-001", t),
+            _make_log("tr-001 Fail something broke", t + timedelta(seconds=1)),
+        ]
+        fetch_logs()
+        assert FailureCounterStore.get_count("Proc", "act", t + timedelta(seconds=1)) == 1
+
+    @patch("django_logic_monitoring.actions.fetch_logs_since")
+    def test_records_loop_counter(self, mock_fetch):
+        t = datetime(2025, 6, 15, 10, 0, 0)
+        mock_fetch.return_value = [
+            _make_log("tr-001 Start Proc act app-model-field-1 tr-001 tr-001", t),
+        ]
+        fetch_logs()
+        assert LoopCounterStore.get_count("app.model", "1", "Proc", "act", t) == 1

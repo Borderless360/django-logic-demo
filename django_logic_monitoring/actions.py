@@ -1,17 +1,25 @@
+import json
 import logging
 from datetime import datetime
 
 from django_logic_monitoring.config import (
     DLM_DEFAULT_TIME_LIMIT,
+    DLM_DEGRADATION_RATIO,
+    DLM_FAILURE_THRESHOLD,
     DLM_LOG_PAGE_SIZE,
+    DLM_LOOP_THRESHOLD,
     DLM_MAX_PAGES_PER_RUN,
+    DLM_MIN_EXECUTIONS,
     DLM_MONITORING_SINCE,
+    DLM_STUCK_TIMEOUT,
 )
 from django_logic_monitoring.logs import fetch_logs_since
 from django_logic_monitoring.storage import (
     AnomalyStore,
     AnomalyType,
+    FailureCounterStore,
     LastLogTimestamp,
+    LoopCounterStore,
     StatStore,
     TransitionStore,
 )
@@ -202,6 +210,9 @@ def fetch_logs():
                     parent_id=event["parent_id"],
                     timestamp=timestamp,
                 )
+                LoopCounterStore.record(
+                    model_name, object_id, event["process"], event["action"], timestamp,
+                )
 
             elif event["type"] in GROUP_EVENTS:
                 if TransitionStore.exists(tr_id):
@@ -236,6 +247,11 @@ def fetch_logs():
 
             elif event["type"] == "Fail":
                 if TransitionStore.exists(tr_id):
+                    tr_data = TransitionStore.get(tr_id)
+                    if tr_data:
+                        FailureCounterStore.record(
+                            tr_data["process"], tr_data.get("action", ""), timestamp,
+                        )
                     TransitionStore.update(tr_id, is_completed=True, timestamp=timestamp)
 
             elif event["type"] in ("SetState", "Lock", "BackgroundMode", "NextTransition"):
@@ -267,8 +283,31 @@ def fetch_logs():
     logger.info("Processed %d log entries, stat updates: %d", total_processed, len(stat_updates))
 
 
+def _create_anomaly(tr, anomaly_type, now, new_anomalies, **extra_fields):
+    """Helper: create anomaly if not already recorded for this transition."""
+    if AnomalyStore.exists_for(tr["id"], anomaly_type):
+        return
+    anomaly_id = AnomalyStore.create(
+        tr_id=tr["id"],
+        process=tr.get("process", ""),
+        action=tr.get("action", ""),
+        step_type=tr.get("step_type", ""),
+        step_name=tr.get("step_name", ""),
+        anomaly_type=anomaly_type,
+        timestamp=now,
+    )
+    if anomaly_id:
+        entry = {
+            "anomaly_id": anomaly_id,
+            "tr_id": tr["id"],
+            "type": anomaly_type.name,
+            **extra_fields,
+        }
+        new_anomalies.append(entry)
+
+
 def detect_anomaly():
-    """Detect execution-time anomalies in active transitions."""
+    """Detect anomalies in active transitions."""
     transitions = TransitionStore.get_all()
     if not transitions:
         logger.info("No active transitions")
@@ -287,46 +326,57 @@ def detect_anomaly():
         action = tr.get("action", "")
         ts_raw = tr.get("timestamp", "")
 
-        if not step_type or not step_name or not ts_raw:
+        if not ts_raw:
             continue
 
         tr_timestamp = datetime.fromisoformat(ts_raw)
-        current_exec = (now - tr_timestamp).total_seconds()
+        elapsed = (now - tr_timestamp).total_seconds()
+
+        # ── Stuck transition ──
+        if elapsed > DLM_STUCK_TIMEOUT:
+            _create_anomaly(tr, AnomalyType.STUCK_TRANSITION, now, new_anomalies)
+
+        # ── Frequent failures ──
+        if process and action:
+            fail_count = FailureCounterStore.get_count(process, action, now)
+            if fail_count >= DLM_FAILURE_THRESHOLD:
+                _create_anomaly(tr, AnomalyType.FREQUENT_FAILURES, now, new_anomalies)
+
+        # ── Loop detection ──
+        model_name = tr.get("model_name", "")
+        object_id = tr.get("object_id", "")
+        if model_name and object_id and process and action:
+            loop_count = LoopCounterStore.get_count(model_name, object_id, process, action, now)
+            if loop_count >= DLM_LOOP_THRESHOLD:
+                _create_anomaly(tr, AnomalyType.LOOP_DETECTION, now, new_anomalies)
+
+        if not step_type or not step_name:
+            continue
 
         stat = StatStore.find(process, action, step_type, step_name)
+
+        # ── Long execution ──
         time_limit = float(stat["time_limit"]) if stat else DLM_DEFAULT_TIME_LIMIT
-
-        if current_exec > time_limit:
-            if AnomalyStore.exists_for(tr["id"], AnomalyType.LONG_EXECUTION):
-                continue
-
-            anomaly_id = AnomalyStore.create(
-                tr_id=tr["id"],
-                process=process,
-                action=action,
-                step_type=step_type,
-                step_name=step_name,
-                anomaly_type=AnomalyType.LONG_EXECUTION,
-                timestamp=now,
+        if elapsed > time_limit:
+            _create_anomaly(
+                tr, AnomalyType.LONG_EXECUTION, now, new_anomalies,
+                current_exec=elapsed, time_limit=time_limit,
             )
-            new_anomalies.append({
-                "anomaly_id": anomaly_id,
-                "tr_id": tr["id"],
-                "process": process,
-                "action": action,
-                "step_type": step_type,
-                "step_name": step_name,
-                "current_exec": current_exec,
-                "time_limit": time_limit,
-            })
+
+        # ── Execution time degradation ──
+        if stat:
+            last_exec = json.loads(stat.get("last_exec", "[]"))
+            if len(last_exec) >= DLM_MIN_EXECUTIONS:
+                mid = len(last_exec) // 2
+                older_half = last_exec[:mid]
+                recent_half = last_exec[mid:]
+                older_mean = sum(older_half) / len(older_half)
+                recent_mean = sum(recent_half) / len(recent_half)
+                if older_mean > 0 and recent_mean / older_mean >= DLM_DEGRADATION_RATIO:
+                    _create_anomaly(tr, AnomalyType.EXECUTION_TIME_DEGRADATION, now, new_anomalies)
 
     for a in new_anomalies:
-        logger.warning(
-            "ANOMALY DETECTED [id=%s] transition=%s process=%s action=%s "
-            "step=%s.%s exec_time=%.1fs limit=%.1fs",
-            a["anomaly_id"], a["tr_id"], a["process"], a["action"],
-            a["step_type"], a["step_name"], a["current_exec"], a["time_limit"],
-        )
+        logger.warning("ANOMALY DETECTED [id=%s] type=%s transition=%s", a["anomaly_id"], a["type"], a["tr_id"])
 
     if not new_anomalies:
         logger.info("No new anomalies detected (%d active transitions)", len(transitions))
