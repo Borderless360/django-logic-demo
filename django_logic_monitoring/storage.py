@@ -1,6 +1,7 @@
 import json
 import math
 from datetime import datetime
+from enum import IntEnum
 
 from core.redis import redis_client
 
@@ -9,6 +10,10 @@ from django_logic_monitoring.config import (
     DLM_MAX_EXECUTIONS,
     DLM_MIN_EXECUTIONS,
 )
+
+
+class AnomalyType(IntEnum):
+    LONG_EXECUTION = 1
 
 PREFIX = "dlm"
 
@@ -212,17 +217,36 @@ class AnomalyStore:
         return f"{cls._PREFIX}:{anomaly_id}"
 
     @classmethod
-    def create(cls, *, tr_id, current_exec, timestamp=None) -> str:
+    def _unique_key(cls, tr_id, anomaly_type: AnomalyType):
+        return f"{cls._PREFIX}:uniq:{tr_id}:{anomaly_type.value}"
+
+    @classmethod
+    def create(cls, *, tr_id, process, action, step_type, step_name,
+               anomaly_type: AnomalyType, timestamp=None) -> str | None:
+        """Create an anomaly. Returns anomaly id, or None if (tr_id, type) already exists."""
+        ukey = cls._unique_key(tr_id, anomaly_type)
+        if redis_client.exists(ukey):
+            return None
+
         anomaly_id = str(redis_client.incr(cls.COUNTER_KEY))
         data = {
             "id": anomaly_id,
             "tr_id": str(tr_id),
-            "current_exec": str(current_exec),
+            "process": process,
+            "action": action,
+            "step_type": step_type,
+            "step_name": step_name,
+            "type": str(anomaly_type.value),
             "timestamp": (timestamp or datetime.now()).isoformat(),
         }
         redis_client.hset(cls._key(anomaly_id), mapping=data)
         redis_client.sadd(cls.INDEX_KEY, anomaly_id)
+        redis_client.set(ukey, anomaly_id)
         return anomaly_id
+
+    @classmethod
+    def exists_for(cls, tr_id, anomaly_type: AnomalyType) -> bool:
+        return redis_client.exists(cls._unique_key(tr_id, anomaly_type)) > 0
 
     @classmethod
     def get_all(cls) -> list[dict]:
@@ -236,5 +260,14 @@ class AnomalyStore:
 
     @classmethod
     def delete(cls, anomaly_id):
+        data = redis_client.hgetall(cls._key(anomaly_id))
+        if data:
+            decoded = _decode(data)
+            tr_id = decoded.get("tr_id", "")
+            atype = decoded.get("type", "")
+            if tr_id and atype:
+                redis_client.delete(cls._unique_key(
+                    tr_id, AnomalyType(int(atype))
+                ))
         redis_client.delete(cls._key(anomaly_id))
         redis_client.srem(cls.INDEX_KEY, str(anomaly_id))

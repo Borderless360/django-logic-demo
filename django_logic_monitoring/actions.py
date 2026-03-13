@@ -10,6 +10,7 @@ from django_logic_monitoring.config import (
 from django_logic_monitoring.logs import fetch_logs_since
 from django_logic_monitoring.storage import (
     AnomalyStore,
+    AnomalyType,
     LastLogTimestamp,
     StatStore,
     TransitionStore,
@@ -296,13 +297,16 @@ def detect_anomaly():
         time_limit = float(stat["time_limit"]) if stat else DLM_DEFAULT_TIME_LIMIT
 
         if current_exec > time_limit:
-            existing = AnomalyStore.get_all()
-            if any(a["tr_id"] == tr["id"] for a in existing):
+            if AnomalyStore.exists_for(tr["id"], AnomalyType.LONG_EXECUTION):
                 continue
 
             anomaly_id = AnomalyStore.create(
                 tr_id=tr["id"],
-                current_exec=current_exec,
+                process=process,
+                action=action,
+                step_type=step_type,
+                step_name=step_name,
+                anomaly_type=AnomalyType.LONG_EXECUTION,
                 timestamp=now,
             )
             new_anomalies.append({

@@ -1,6 +1,8 @@
 from django.core.management.base import BaseCommand
 
-from django_logic_monitoring.storage import AnomalyStore, TransitionStore
+from django_logic_monitoring.storage import AnomalyStore, AnomalyType, TransitionStore
+
+ANOMALY_TYPE_NAMES = {str(t.value): t.name for t in AnomalyType}
 
 
 class Command(BaseCommand):
@@ -16,29 +18,31 @@ class Command(BaseCommand):
 
         rows = []
         for a in anomalies:
+            type_name = ANOMALY_TYPE_NAMES.get(a.get("type", ""), "?")
             rows.append((
                 a["id"],
                 a["tr_id"],
-                f"{float(a['current_exec']):.1f}s",
+                type_name,
+                f"{a.get('process', '?')}.{a.get('action', '?')}",
+                f"{a.get('step_type', '?')}:{a.get('step_name', '?')}",
                 a.get("timestamp", "")[:19],
             ))
 
-        exec_w = max(len("Exec"), *(len(r[2]) for r in rows))
-
         self.stdout.write(self.style.WARNING(f"Anomalies: {len(anomalies)}\n"))
         self.stdout.write(self.style.MIGRATE_HEADING(
-            f"{'ID':>7}  {'Transition':<36}  {'Exec':>{exec_w}}  Detected at"
+            f"{'ID':>7}  {'Transition':<36}  {'Type':<16}  {'Process':<24}  {'Step':<30}  Detected at"
         ))
         for r in rows:
             self.stdout.write(
-                f"{r[0]:>7}  {r[1]:<36}  {r[2]:>{exec_w}}  {r[3]}"
+                f"{r[0]:>7}  {r[1]:<36}  {r[2]:<16}  {r[3]:<24}  {r[4]:<30}  {r[5]}"
             )
 
         self.stdout.write("")
         for a in anomalies:
+            type_name = ANOMALY_TYPE_NAMES.get(a.get("type", ""), "?")
             tr = TransitionStore.get(a["tr_id"])
             self.stdout.write(self.style.MIGRATE_HEADING(
-                f"Anomaly #{a['id']}  transition {a['tr_id']}"
+                f"Anomaly #{a['id']}  [{type_name}]  transition {a['tr_id']}"
             ))
             if not tr:
                 self.stdout.write("  Transition not found (completed or removed)\n")
@@ -50,14 +54,14 @@ class Command(BaseCommand):
                 f" field={tr.get('field_name', '?')}"
             )
             self.stdout.write(
-                f"  Process: {tr.get('process', '?')}"
-                f"  action={tr.get('action', '?')}"
+                f"  Process: {a.get('process', '?')}"
+                f"  action={a.get('action', '?')}"
             )
             step_n = tr.get("step_n", "?")
             steps = tr.get("steps", "?")
             self.stdout.write(
-                f"  Stuck:   {tr.get('step_type', '?')}"
-                f" \"{tr.get('step_name', '?')}\""
+                f"  Stuck:   {a.get('step_type', '?')}"
+                f" \"{a.get('step_name', '?')}\""
                 f"  (step {step_n}/{steps})"
             )
             self.stdout.write(

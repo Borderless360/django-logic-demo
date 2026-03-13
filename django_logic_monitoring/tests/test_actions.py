@@ -12,6 +12,7 @@ from django_logic_monitoring.actions import (
 from django_logic_monitoring.config import DLM_DEFAULT_TIME_LIMIT, DLM_LOG_PAGE_SIZE
 from django_logic_monitoring.storage import (
     AnomalyStore,
+    AnomalyType,
     LastLogTimestamp,
     StatStore,
     TransitionStore,
@@ -404,7 +405,11 @@ class TestClear:
         assert TransitionStore.get_all() == []
 
     def test_removes_orphaned_anomalies(self):
-        AnomalyStore.create(tr_id="nonexistent", current_exec=100.0)
+        AnomalyStore.create(
+            tr_id="nonexistent", process="P", action="a",
+            step_type="SideEffect", step_name="h",
+            anomaly_type=AnomalyType.LONG_EXECUTION,
+        )
         clear()
         assert AnomalyStore.get_all() == []
 
@@ -414,7 +419,11 @@ class TestClear:
             model_name="m", object_id="1", field_name="f",
             timestamp=datetime(2025, 1, 1),
         )
-        AnomalyStore.create(tr_id="tr-001", current_exec=100.0)
+        AnomalyStore.create(
+            tr_id="tr-001", process="P", action="a",
+            step_type="SideEffect", step_name="h",
+            anomaly_type=AnomalyType.LONG_EXECUTION,
+        )
         clear()
         assert len(AnomalyStore.get_all()) == 1
 

@@ -7,6 +7,7 @@ import pytest
 from django_logic_monitoring.config import DLM_DEFAULT_TIME_LIMIT, DLM_MIN_EXECUTIONS
 from django_logic_monitoring.storage import (
     AnomalyStore,
+    AnomalyType,
     LastLogTimestamp,
     StatStore,
     TransitionStore,
@@ -210,24 +211,46 @@ class TestStatStore:
 
 
 class TestAnomalyStore:
+    DEFAULTS = dict(
+        process="P", action="a", step_type="SideEffect",
+        step_name="handler", anomaly_type=AnomalyType.LONG_EXECUTION,
+    )
+
     def test_create_and_get_all(self):
         ts = datetime(2025, 6, 15, 10, 0, 0)
-        aid = AnomalyStore.create(tr_id="tr-001", current_exec=350.5, timestamp=ts)
+        aid = AnomalyStore.create(tr_id="tr-001", **self.DEFAULTS, timestamp=ts)
         anomalies = AnomalyStore.get_all()
         assert len(anomalies) == 1
         assert anomalies[0]["id"] == aid
         assert anomalies[0]["tr_id"] == "tr-001"
-        assert float(anomalies[0]["current_exec"]) == 350.5
+        assert anomalies[0]["process"] == "P"
+        assert anomalies[0]["action"] == "a"
+        assert anomalies[0]["step_type"] == "SideEffect"
+        assert anomalies[0]["step_name"] == "handler"
+        assert anomalies[0]["type"] == str(AnomalyType.LONG_EXECUTION.value)
 
-    def test_create_multiple(self):
-        AnomalyStore.create(tr_id="tr-001", current_exec=100.0)
-        AnomalyStore.create(tr_id="tr-002", current_exec=200.0)
+    def test_create_multiple_different_transitions(self):
+        AnomalyStore.create(tr_id="tr-001", **self.DEFAULTS)
+        AnomalyStore.create(tr_id="tr-002", **self.DEFAULTS)
         assert len(AnomalyStore.get_all()) == 2
 
+    def test_unique_constraint_tr_id_type(self):
+        aid1 = AnomalyStore.create(tr_id="tr-001", **self.DEFAULTS)
+        aid2 = AnomalyStore.create(tr_id="tr-001", **self.DEFAULTS)
+        assert aid1 is not None
+        assert aid2 is None
+        assert len(AnomalyStore.get_all()) == 1
+
+    def test_exists_for(self):
+        assert not AnomalyStore.exists_for("tr-001", AnomalyType.LONG_EXECUTION)
+        AnomalyStore.create(tr_id="tr-001", **self.DEFAULTS)
+        assert AnomalyStore.exists_for("tr-001", AnomalyType.LONG_EXECUTION)
+
     def test_delete(self):
-        aid = AnomalyStore.create(tr_id="tr-001", current_exec=100.0)
+        aid = AnomalyStore.create(tr_id="tr-001", **self.DEFAULTS)
         AnomalyStore.delete(aid)
         assert len(AnomalyStore.get_all()) == 0
+        assert not AnomalyStore.exists_for("tr-001", AnomalyType.LONG_EXECUTION)
 
     def test_get_all_empty(self):
         assert AnomalyStore.get_all() == []
