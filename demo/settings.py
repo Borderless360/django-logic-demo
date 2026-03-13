@@ -90,6 +90,11 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'stream': sys.stdout,
         },
+        'dlm_console': {
+            'class': 'logging.StreamHandler',
+            'stream': sys.stdout,
+            'formatter': 'dlm',
+        },
         'file': {
             'class': 'logging.FileHandler',
             'filename': os.path.join(BASE_DIR, 'django-logic.log'),
@@ -104,6 +109,9 @@ LOGGING = {
         'verbose': {
             'format': '%(levelname)-10s %(asctime)s %(message)s',
         },
+        'dlm': {
+            'format': 'DLM %(message)s',
+        },
     },
     'loggers': {
         'main': {
@@ -115,8 +123,9 @@ LOGGING = {
             'level': logging.INFO,
         },
         'django_logic_monitoring': {
-            'handlers': ['console'],
+            'handlers': ['dlm_console'],
             'level': logging.INFO,
+            'propagate': False,
         },
     },
 }
@@ -146,6 +155,7 @@ CELERY_BEAT_SCHEDULE = {
 # ---------------------------------------------------------------------------
 DLM_CLICKHOUSE_CLIENT_PATH = "clickhouse.client.client"
 DLM_DEFAULT_TIME_LIMIT = 300        # seconds
-DLM_MONITORING_DELAY = 10           # seconds
+DLM_MONITORING_DELAY = 60           # seconds
 DLM_MIN_EXECUTIONS = 5              # min samples before computing σ
 DLM_MAX_EXECUTIONS = 100            # rolling window size
+DLM_MONITORING_SINCE = "2026-03-10T00:00:00"  # ignore logs before this timestamp

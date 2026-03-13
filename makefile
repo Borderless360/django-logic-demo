@@ -20,7 +20,9 @@ info:
 	@echo "  test_abstract : Run abstract tests"
 	@echo "  test          : Run all tests"
 	@echo ""
-	@echo "  dlm-check     : Check DLM monitoring (clear state, process CH logs, show results)"
+	@echo "  dlm-stats     : Show DLM execution-time statistics"
+	@echo "  dlm-transitions: Show DLM active transitions"
+	@echo "  dlm-anomalies : Show DLM detected anomalies"
 
 build:
 	export DOCKER_BUILDKIT=1 && \
@@ -62,8 +64,12 @@ test-one:
 test-x:
 	make test-one t=abstract/e2e/test_basic.py::test_transition_with_failed_callback
 
-dlm-check:
-	make manage s=demo c=dlm_e2e_check
+dlm-stats:
+	make manage s=demo c=dlm_get_stats
+dlm-transitions:
+	make manage s=demo c=dlm_get_current_transitions
+dlm-anomalies:
+	make manage s=demo c=dlm_get_anomalies
 dlm-clear-stats:
 	make manage s=demo c=dlm_clear_stats
 

@@ -1,7 +1,12 @@
 import logging
 from datetime import datetime
 
-from django_logic_monitoring.config import DLM_DEFAULT_TIME_LIMIT, DLM_LOG_PAGE_SIZE
+from django_logic_monitoring.config import (
+    DLM_DEFAULT_TIME_LIMIT,
+    DLM_LOG_PAGE_SIZE,
+    DLM_MAX_PAGES_PER_RUN,
+    DLM_MONITORING_SINCE,
+)
 from django_logic_monitoring.logs import fetch_logs_since
 from django_logic_monitoring.storage import (
     AnomalyStore,
@@ -134,9 +139,10 @@ def _remove_completed_transitions():
 
 def fetch_logs():
     """Read logs page by page → update transitions → remove completed → update stats."""
-    last_ts = LastLogTimestamp.get()
+    last_ts = LastLogTimestamp.get() or DLM_MONITORING_SINCE
 
     total_processed = 0
+    pages_processed = 0
     # {tr_id: {step_type, step_name, start_time}} — tracks the currently
     # executing step so we can compute its duration when the next event arrives.
     active_steps: dict[str, dict] = {}
@@ -236,10 +242,15 @@ def fetch_logs():
                     TransitionStore.update(tr_id, timestamp=timestamp)
 
         total_processed += len(page)
+        pages_processed += 1
         last_ts = page[-1]["timestamp"]
         LastLogTimestamp.set(last_ts)
 
         if is_last_page:
+            break
+
+        if pages_processed >= DLM_MAX_PAGES_PER_RUN:
+            logger.info("Reached page limit (%d), deferring remaining logs to next run", DLM_MAX_PAGES_PER_RUN)
             break
 
     if total_processed == 0:

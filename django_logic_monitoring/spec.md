@@ -76,7 +76,9 @@ deviation > 2σ from the mean, minimum DLM_MIN_EXECUTIONS records
 - DLM_DEFAULT_TIME_LIMIT
 - DLM_MONITORING_DELAY
 - DLM_MIN_EXECUTIONS
-- DLM_MAX_EXECUTIONS 
+- DLM_MAX_EXECUTIONS
+- DLM_MAX_PAGES_PER_RUN
+- DLM_MONITORING_SINCE   datetime? - ignore logs before this timestamp
 
 -------------------------------------------------------------------------------
 # Business Rules
@@ -114,5 +116,6 @@ Celery worker where running main task
 **dlm_get_current_transitions** return active transitions with states
 **dlm_fetch_logs** run fetch_logs action
 **dlm_detect_anomaly** run detect_anomaly action
-**dlm_e2e_check** E2E check: reset state, process logs, show results
+**dlm_get_stats** show collected execution-time statistics
+**dlm_get_anomalies** show detected execution-time anomalies
 **dlm_clear_stats** clear all collected execution-time statistics

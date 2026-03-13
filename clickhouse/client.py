@@ -17,6 +17,7 @@ class LazyClickHouseClient:
                 username=os.getenv('CLICKHOUSE_USER', 'default'),
                 password=os.getenv('CLICKHOUSE_PASSWORD', ''),
                 database=os.getenv('CLICKHOUSE_DATABASE', 'default'),
+                secure=os.getenv('CLICKHOUSE_SECURE', 'false') == 'true',
             )
         return self._client
     
