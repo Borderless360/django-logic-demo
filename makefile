@@ -23,6 +23,7 @@ info:
 	@echo "  dlm-stats     : Show DLM execution-time statistics"
 	@echo "  dlm-transitions: Show DLM active transitions"
 	@echo "  dlm-anomalies : Show DLM detected anomalies"
+	@echo "  fuckup-check  : Run fuckup_check (optional: make fuckup-check a='--since-days=7')"
 
 build:
 	export DOCKER_BUILDKIT=1 && \
@@ -72,6 +73,8 @@ dlm-anomalies:
 	make manage s=demo c=dlm_get_anomalies
 dlm-clear-stats:
 	make manage s=demo c=dlm_clear_stats
+fuckup-check:
+	docker compose -p $(PROJECT_NAME) exec demo python manage.py fuckup_check $(a)
 
 celery-tasks:
 	docker compose -p $(PROJECT_NAME) exec demo-worker celery -A demo.celery_app inspect registered

@@ -31,6 +31,7 @@ CACHES = {
 }
 
 INSTALLED_APPS = [
+    'demo',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -144,10 +145,10 @@ QUEUE_TRANSITION_MAX_RETRIES = 3
 from celery.schedules import crontab  # noqa: E402
 
 CELERY_BEAT_SCHEDULE = {
-    "dlm-monitoring": {
-        "task": "django_logic_monitoring.monitoring",
-        "schedule": float(os.getenv("DLM_MONITORING_DELAY", 10)),
-    },
+    # "dlm-monitoring": {
+    #     "task": "django_logic_monitoring.monitoring",
+    #     "schedule": float(os.getenv("DLM_MONITORING_DELAY", 10)),
+    # },
 }
 
 # ---------------------------------------------------------------------------
