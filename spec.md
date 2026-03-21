@@ -19,6 +19,7 @@ Sandbox to make experiments and e2e tests for Django Logic.
 - utils - utils for all 
 - v2 - alternative implementation of django logic
 - v3 - alternative implementation «One Transaction — One Class» of django logic
+- v4 - evolutionary refactoring of django logic (typed context, strict permissions, fixed error handling)
 
 ## Infrastructure
 

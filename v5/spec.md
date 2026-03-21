@@ -80,6 +80,29 @@ Groups transitions and actions for a single model state field.
 # Usage
 
 ```python
+
+
+obj.process.action()
+
+
+class BasicProcess(BaseProcess):
+    transitions = [
+        Transition(ActionA,
+            sources=[STATES.A], target=STATES.B,
+            side_effects=[error_for_superuser],
+            failure_side_effects=[save_error],
+        ),
+        Transition(
+            action_name='fail_callback', sources=[STATES.A], target=STATES.B,
+            callbacks=[error_for_superuser, short_action],
+        ),
+    ]
+
+
+действия без аргументов?
+def some_action(obj)
+
+
 class MakeReport(Action):
     name = 'MakeReport'
 

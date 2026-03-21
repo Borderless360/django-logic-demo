@@ -1,5 +1,6 @@
 from celery import shared_task
 from django_logic.utils import restore_user_object, restore_action
+from django_logic.process import _transition_context
 
 
 @shared_task(acks_late=True)
@@ -19,4 +20,13 @@ def run_transition_in_background(**kwargs):
         user=kwargs.get('user'),
     )
     kwargs['background_mode_phase_2'] = True
-    transition.change_state(process.state, **kwargs)
+    # Phase 2 bypasses Process._get_transition_method, so _transition_context
+    # is never set. Propagate it here so nested callbacks inherit root_id/parent_id.
+    token = _transition_context.set({
+        'root_id': kwargs.get('root_id'),
+        'tr_id': kwargs.get('tr_id'),
+    })
+    try:
+        transition.change_state(process.state, **kwargs)
+    finally:
+        _transition_context.reset(token)
