@@ -79,12 +79,6 @@ class Process(object):
 
         user = kwargs['user'] if 'user' in kwargs else None
         transition = self.get_transition_by_action_name(action_name, user)
-        # DEPRECATED
-        self.logger.info(f"{self.state.instance_key}, process {self.process_name} "
-                            f"executes '{action_name}' transition from {getattr(self.state.instance, self.state.field_name)} "
-                            f"to {transition.target}",
-                            log_type=LogType.TRANSITION_DEBUG,
-                            log_data=self.state.get_log_data())
 
         tr_id = uuid.uuid4()
         logger.info(
@@ -177,20 +171,8 @@ class Process(object):
         transitions = list(self.get_available_transitions(action_name=action_name, user=user, ignore_state=True))
         if len(transitions) == 1:
             transition = transitions[0]
-            # DEPRECATED
-            self.logger.info(f"{self.state.instance_key}, process {self.process_name} "
-                             f"executes '{action_name}' transition from {self.state.get_state()} "
-                             f"to {transition.target}",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=self.state.get_log_data())
             return transition
         elif len(transitions) > 1:
-            # DEPRECATED
-            self.logger.info(f"Runtime error: {self.state.instance_key} has several "
-                             f"transitions with action name '{action_name}'. "
-                             f"Make sure to specify conditions and permissions accordingly to fix such case",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=self.state.get_log_data())
             logger.info(
                 f"Runtime error: {self.state.instance_key} has several "
                 f"transitions with action name '{action_name}'. "
@@ -198,11 +180,6 @@ class Process(object):
                 )
             raise TransitionNotAllowed("There are several transitions available")
         
-        # DEPRECATED
-        self.logger.info(f"Process class {self.__class__} for object {self.instance.id} has no transition "
-                         f"with action name {action_name}, user {user}",
-                         log_type=LogType.TRANSITION_DEBUG,
-                         log_data=self.state.get_log_data())
         logger.info(
             f"Process class {self.__class__} for object {self.instance.id} has no transition "
             f"with action name {action_name}, user {user}"

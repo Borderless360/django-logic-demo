@@ -1,6 +1,5 @@
 from hashlib import blake2b
 from django.core.cache import cache
-from django.utils.functional import cached_property
 
 
 class State(object):
