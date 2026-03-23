@@ -173,6 +173,7 @@ class TestFetchLogs:
         fetch_logs()
         assert len(TransitionStore.get_all()) == 2
 
+    @patch("django_logic_monitoring.actions.DLM_MONITORING_SINCE", None)
     @patch("django_logic_monitoring.actions.DLM_LOG_PAGE_SIZE", 3)
     @patch("django_logic_monitoring.actions.fetch_logs_since")
     def test_fetches_multiple_pages(self, mock_fetch):
@@ -193,6 +194,7 @@ class TestFetchLogs:
         assert LastLogTimestamp.get() == t + timedelta(seconds=2)
         assert mock_fetch.call_count == 2
 
+    @patch("django_logic_monitoring.actions.DLM_MONITORING_SINCE", None)
     @patch("django_logic_monitoring.actions.DLM_LOG_PAGE_SIZE", 2)
     @patch("django_logic_monitoring.actions.fetch_logs_since")
     def test_pagination_does_not_skip_duplicate_timestamps(self, mock_fetch):

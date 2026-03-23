@@ -1,12 +1,13 @@
 from abc import ABC
 from uuid import UUID
-
+from django.conf import settings
 from django_logic.constants import LogType
 from django_logic.commands import SideEffects, Callbacks, FailureSideEffects, Permissions, Conditions, NextTransition
 from django_logic.exceptions import TransitionNotAllowed
 from django_logic.logger import get_logger
 from django_logic.logger import transition_logger, TransitionEventType
 from django_logic.state import State
+from .tasks import run_transition_in_background
 
 
 class BaseTransition(ABC):
@@ -47,8 +48,10 @@ class Transition(BaseTransition):
     Otherwise if an exception has been raised it start executing `failure callbacks` and
     changes the state to the failed one and unlocks the state field.
     """
+    run_in_background_by_default = False
+    queue_name = getattr(settings, 'DJANGO_LOGIC_DEFAULT_QUEUE', 'celery')
 
-    def __init__(self, action_name: str, sources: list, target: str, **kwargs):
+    def __init__(self, action_name: str, sources: list, target: str, queue_name: str = None,  **kwargs):
         """
         Init of the transition.
         :param action_name: callable action name which used in a process
@@ -78,6 +81,7 @@ class Transition(BaseTransition):
         self.next_transition = self.next_transition_class(kwargs.get('next_transition', None))
         # DEPRECATED
         self.logger = get_logger(module_name=__name__)
+
 
     def __str__(self):
         return f"Transition: {self.action_name} to {self.target}"
@@ -112,6 +116,9 @@ class Transition(BaseTransition):
             f'{self.action_name} {state.instance_key} {kwargs.get("root_id")} {kwargs.get("parent_id")}',
             extra={'kwargs': kwargs, 'state_hash': state._get_hash()}
         )
+
+        if self.run_in_background_by_default:
+            kwargs['background_mode'] = True
 
         # Background Mode has two phases:
         # Phase 1: Lock state and push transition to message broker
@@ -194,9 +201,10 @@ class Transition(BaseTransition):
 
     def run_in_background(self, state: State, **kwargs):
         """
-        Run the transition in background. 
+        Run the transition in background, by default implementation is to use Celery task.
         """
-        raise NotImplementedError
+        task_kwargs = self.get_task_kwargs(state, **kwargs)
+        run_transition_in_background.apply_async(kwargs=task_kwargs, queue=self.queue_name)
 
     def fail_transition(self, state: State, exception: Exception, **kwargs):
         """
@@ -254,6 +262,11 @@ class Transition(BaseTransition):
         return task_kwargs
 
 
+class BackgroundTransition(Transition):
+    """ Transition that should be run in background by default """
+    run_in_background_by_default = True
+
+
 class Action(Transition):
     """
     Action, in contrast with Transition class, does not change the state during the normal execution.
@@ -288,3 +301,4 @@ class Action(Transition):
         :param state: State object
         """
         self.callbacks.execute(state, **kwargs)
+
