@@ -1,6 +1,6 @@
 from contextvars import ContextVar
 
-from django_logic.logger import transition_logger as logger, TransitionEventType
+from django_logic.logger import transition_logger, TransitionEventType
 from django_logic.state import State
 from django_logic.constants import LogType
 from django_logic.logger import get_logger
@@ -52,16 +52,12 @@ class Permissions(BaseCommand):
 class SideEffects(BaseCommand):
     def execute(self, state: State, **kwargs):
         """Side-effects execution"""
-        # DEPRECATED
-        self.logger.info(f"{state.instance_key} side effects of '{self._transition.action_name}' started",
-                         log_type=LogType.TRANSITION_DEBUG,
-                         log_data=state.get_log_data())
         try:
             token = _in_side_effects.set(True)
             try:
-                logger.info(f'{kwargs.get("tr_id")} SideEffects {len(self._commands)}')
+                transition_logger.info(f'{kwargs.get("tr_id")} SideEffects {len(self._commands)}')
                 for command in self._commands:
-                    logger.info(
+                    transition_logger.info(
                         f'{kwargs.get("tr_id")} {TransitionEventType.SIDE_EFFECT.value} {command.__name__}'
                     )
                     command(state.instance, **kwargs)
@@ -69,21 +65,13 @@ class SideEffects(BaseCommand):
                 _in_side_effects.reset(token)
         except Exception as error:
             # DEPRECATED
-            self.logger.info(f"{state.instance_key} side effects of '{self._transition.action_name}' failed "
-                             f"with {error}",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=state.get_log_data())
             self.logger.error(error, log_type=LogType.TRANSITION_ERROR, log_data=state.get_log_data())
 
-            logger.error(f'{kwargs.get("tr_id")} {error}')
+            transition_logger.error(f'{kwargs.get("tr_id")} {error}')
             self._transition.fail_transition(state, error, **kwargs)
-            # Re-raise the exception to propagate to parent transitions
+            # TODO:Re-raise the exception to propagate to parent transitions
             # raise
         else:
-            # DEPRECATED
-            self.logger.info(f"{state.instance_key} side-effects of '{self._transition.action_name}' succeeded",
-                             log_type=LogType.TRANSITION_DEBUG,
-                             log_data=state.get_log_data())
             self._transition.complete_transition(state, **kwargs)
 
 
@@ -95,19 +83,15 @@ class Callbacks(BaseCommand):
         it will stop execution and send a message to the logger.
         Please note, it doesn't run failure callbacks in case of exception.
         """
-        logger.info(f'{kwargs.get("tr_id")} Callbacks {len(self._commands)}')
+        transition_logger.info(f'{kwargs.get("tr_id")} Callbacks {len(self._commands)}')
         command_name = None
         try:
             for command in self.commands:
                 command_name = command.__name__
-                logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.CALLBACK.value} {command_name}')
+                transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.CALLBACK.value} {command_name}')
                 command(state.instance, **kwargs)
         except Exception as error:
-            # DEPRECATED
-            self.logger.info(f"{state.instance_key} callbacks of '{self._transition.action_name}` failed with {error}",
-                            log_type=LogType.TRANSITION_DEBUG,
-                            log_data=state.get_log_data())
-            logger.error(f'{kwargs.get("tr_id")} {TransitionEventType.CALLBACK.value} {command_name}: {error}', exc_info=True, extra={'kwargs': kwargs})
+            transition_logger.error(f'{kwargs.get("tr_id")} {TransitionEventType.CALLBACK.value} {command_name}: {error}', exc_info=True, extra={'kwargs': kwargs})
             # ignore any errors in callbacks
 
 
@@ -120,19 +104,20 @@ class FailureSideEffects(BaseCommand):
         """
         token = _in_side_effects.set(True)
         try:
-            logger.info(f'{kwargs.get("tr_id")} FailureSideEffects {len(self._commands)}')
+            transition_logger.info(f'{kwargs.get("tr_id")} FailureSideEffects {len(self._commands)}')
             for command in self.commands:
-                logger.info(
+                transition_logger.info(
                     f'{kwargs.get("tr_id")} {TransitionEventType.FAILURE_SIDE_EFFECT.value} {command.__name__}'
                 )
                 command(state.instance, **kwargs)
         except Exception as error:
-            logger.error(error)
+            transition_logger.error(error)
             # ignore any errors in failure side effects
         finally:
             _in_side_effects.reset(token)
 
 
+# TODO: use callbacks to run next transition instead?
 class NextTransition(object):
     """
     Runs next transition if it is specified
@@ -161,4 +146,4 @@ class NextTransition(object):
         except Exception as error:
             # Ignore any errors in the next transition, 
             # it should not impact the main transition execution
-            logger.error(error)
+            transition_logger.error(error)

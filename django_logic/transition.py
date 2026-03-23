@@ -133,26 +133,12 @@ class Transition(BaseTransition):
         )
         if not skip_lock:
             if state.is_locked() or not state.lock():
-                # DEPRECATED
-                self.logger.info(f'{state.instance_key} is locked',
-                                log_type=LogType.TRANSITION_DEBUG,
-                                log_data=state.get_log_data())
-
                 raise TransitionNotAllowed("State is locked")
 
             transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.LOCK.value}')
-            # DEPRECATED
-            self.logger.info(f'{state.instance_key} has been locked',
-                            log_type=LogType.TRANSITION_DEBUG,
-                            log_data=state.get_log_data())
 
             if self.in_progress_state:
                 state.set_state(self.in_progress_state)
-                # DEPRECATED
-                log_data = state.get_log_data().update({'user': kwargs.get('user', None)})
-                self.logger.info(f'{state.instance_key} state changed to {self.in_progress_state}',
-                                log_type=LogType.TRANSITION_DEBUG,
-                                log_data=log_data)
                 transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.SET_STATE.value} {self.in_progress_state}')
 
         if kwargs.get('background_mode', False) \
@@ -190,10 +176,6 @@ class Transition(BaseTransition):
         transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.SET_STATE.value} {self.target}')
 
         state.unlock()
-        # DEPRECATED
-        self.logger.info(f'{state.instance_key} has been unlocked',
-                         log_type=LogType.TRANSITION_DEBUG,
-                         log_data=state.get_log_data())
         transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.UNLOCK.value}')
 
         self.callbacks.execute(state, **kwargs)
@@ -226,10 +208,6 @@ class Transition(BaseTransition):
         self.failure_side_effects.execute(state, exception=exception, **kwargs)
 
         state.unlock()
-        # DEPRECATED
-        self.logger.info(f'{state.instance_key} has been unlocked',
-                         log_type=LogType.TRANSITION_DEBUG,
-                         log_data=state.get_log_data())
         transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.UNLOCK.value}')
 
         self.failure_callbacks.execute(state, exception=exception, **kwargs)
