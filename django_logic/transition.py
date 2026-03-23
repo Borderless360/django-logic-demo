@@ -7,7 +7,7 @@ from django_logic.exceptions import TransitionNotAllowed
 from django_logic.logger import get_logger
 from django_logic.logger import transition_logger, TransitionEventType
 from django_logic.state import State
-from .tasks import run_transition_in_background
+from .tasks import django_logic_background
 
 
 class BaseTransition(ABC):
@@ -187,7 +187,7 @@ class Transition(BaseTransition):
         Run the transition in background, by default implementation is to use Celery task.
         """
         task_kwargs = self.get_task_kwargs(state, **kwargs)
-        run_transition_in_background.apply_async(kwargs=task_kwargs, queue=self.queue_name)
+        django_logic_background.apply_async(kwargs=task_kwargs, queue=self.queue_name)
 
     def fail_transition(self, state: State, exception: Exception, **kwargs):
         """

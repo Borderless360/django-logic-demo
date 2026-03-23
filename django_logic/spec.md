@@ -115,6 +115,11 @@ State with optimistic locking (cache set nx=True); only first caller acquires th
 - Child transitions invoked during phase 2 side_effects or failure_side_effects
   run inline (already inside the worker)
 
+## defer
+- `defer(func)` / `defer(func, queue_name)` returns a **callable**; invoking that
+  callable submits `func` to run in its **own** Celery task (on `queue_name` or the
+  default queue when omitted), instead of running `func` in the current thread
+
 ## Model Binding
 - ProcessManager.bind_model_process: adds a property on the model that returns
   a Process instance for the given state field
@@ -129,7 +134,7 @@ State with optimistic locking (cache set nx=True); only first caller acquires th
 # Runtime
 
 ## django-logic-worker
-Celery worker that executes background transitions (run_transition_in_background task)
+Celery worker that executes background transitions (django_logic_background task)
 
 ## Dependencies
 - Django cache backend (Redis) for state locking

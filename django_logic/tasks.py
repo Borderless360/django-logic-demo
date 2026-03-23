@@ -4,7 +4,7 @@ from django_logic.process import _transition_context
 
 
 @shared_task(acks_late=True)
-def run_transition_in_background(**kwargs):
+def django_logic_background(**kwargs):
     """
     Restore the object, find the transition by action_name, and run it directly
     with background_mode_phase_2 (no lock, run side effects).
@@ -30,3 +30,17 @@ def run_transition_in_background(**kwargs):
         transition.change_state(process.state, **kwargs)
     finally:
         _transition_context.reset(token)
+
+
+@shared_task(acks_late=True)
+def django_logic_defer(
+    func_path: str,
+    app_label: str,
+    model_name: str,
+    instance_id,
+    context: dict,
+):
+    """Execute a callable deferred from a transition side effect (separate task)."""
+    from django_logic.defer import execute_deferred
+
+    execute_deferred(func_path, app_label, model_name, instance_id, context)
