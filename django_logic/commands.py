@@ -1,7 +1,11 @@
+from contextvars import ContextVar
+
 from django_logic.logger import transition_logger as logger, TransitionEventType
 from django_logic.state import State
 from django_logic.constants import LogType
 from django_logic.logger import get_logger
+
+_in_side_effects: ContextVar[bool] = ContextVar('_in_side_effects', default=False)
 
 
 class BaseCommand(object):
@@ -53,12 +57,16 @@ class SideEffects(BaseCommand):
                          log_type=LogType.TRANSITION_DEBUG,
                          log_data=state.get_log_data())
         try:
-            logger.info(f'{kwargs.get("tr_id")} SideEffects {len(self._commands)}')
-            for command in self._commands:
-                logger.info(
-                    f'{kwargs.get("tr_id")} {TransitionEventType.SIDE_EFFECT.value} {command.__name__}'
-                )
-                command(state.instance, **kwargs)
+            token = _in_side_effects.set(True)
+            try:
+                logger.info(f'{kwargs.get("tr_id")} SideEffects {len(self._commands)}')
+                for command in self._commands:
+                    logger.info(
+                        f'{kwargs.get("tr_id")} {TransitionEventType.SIDE_EFFECT.value} {command.__name__}'
+                    )
+                    command(state.instance, **kwargs)
+            finally:
+                _in_side_effects.reset(token)
         except Exception as error:
             # DEPRECATED
             self.logger.info(f"{state.instance_key} side effects of '{self._transition.action_name}' failed "
@@ -110,6 +118,7 @@ class FailureSideEffects(BaseCommand):
         Runs after side-effects fail and before the state is unlocked.
         If any command raises an exception it will stop execution and log the error.
         """
+        token = _in_side_effects.set(True)
         try:
             logger.info(f'{kwargs.get("tr_id")} FailureSideEffects {len(self._commands)}')
             for command in self.commands:
@@ -120,6 +129,8 @@ class FailureSideEffects(BaseCommand):
         except Exception as error:
             logger.error(error)
             # ignore any errors in failure side effects
+        finally:
+            _in_side_effects.reset(token)
 
 
 class NextTransition(object):

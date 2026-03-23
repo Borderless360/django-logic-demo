@@ -2,7 +2,7 @@ from abc import ABC
 from uuid import UUID
 from django.conf import settings
 from django_logic.constants import LogType
-from django_logic.commands import SideEffects, Callbacks, FailureSideEffects, Permissions, Conditions, NextTransition
+from django_logic.commands import SideEffects, Callbacks, FailureSideEffects, Permissions, Conditions, NextTransition, _in_side_effects
 from django_logic.exceptions import TransitionNotAllowed
 from django_logic.logger import get_logger
 from django_logic.logger import transition_logger, TransitionEventType
@@ -120,6 +120,9 @@ class Transition(BaseTransition):
         if self.run_in_background_by_default:
             kwargs['background_mode'] = True
 
+        if _in_side_effects.get(False):
+            kwargs['background_mode'] = False
+
         # Background Mode has two phases:
         # Phase 1: Lock state and push transition to message broker
         # Phase 2: Run transition inline in worker with skipping lock state
@@ -152,10 +155,8 @@ class Transition(BaseTransition):
                                 log_data=log_data)
                 transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.SET_STATE.value} {self.in_progress_state}')
 
-        # Note: Only root transition can be run in background
         if kwargs.get('background_mode', False) \
-        and not kwargs.get('background_mode_phase_2', False) \
-        and kwargs.get('root_id') == kwargs.get('tr_id'): 
+        and not kwargs.get('background_mode_phase_2', False):
             transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.BACKGROUND_MODE.value}')
             self.run_in_background(state, **kwargs)
         else:

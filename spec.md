@@ -10,9 +10,7 @@ Sandbox to make experiments and e2e tests for Django Logic.
 - clickhouse    - client ClickHouse and related things 
 - core          -  
 - demo          - main django app
-- django_logic          - copy of original django logic lib
-- django_logic_celery   - copy of original django logic celery lib
-- django_logic_ext      - copy of app from gv repo
+- django_logic  - copy of original django logic lib
 - django_logic_monitoring - django app for monitoring django logic logs
 - invoice       - e2e test based on invoice domain
 - locker        - e2e test based on locker domain
@@ -22,7 +20,6 @@ Sandbox to make experiments and e2e tests for Django Logic.
 - v4 - evolutionary refactoring of django logic (typed context, strict permissions, fixed error handling)
 
 ## Infrastructure
-
 The project runs entirely inside Docker Compose. 
 All day-to-day operations go through `makefile` targets — 
 never run Django/Celery/pytest on the host directly.
