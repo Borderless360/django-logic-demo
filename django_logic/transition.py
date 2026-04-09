@@ -1,10 +1,8 @@
 from abc import ABC
 from uuid import UUID
 from django.conf import settings
-from django_logic.constants import LogType
-from django_logic.commands import SideEffects, Callbacks, FailureSideEffects, Permissions, Conditions, NextTransition, _in_side_effects
+from django_logic.commands import SideEffects, Callbacks, FailureSideEffects, Permissions, Conditions, _in_side_effects, FailureCallbacks
 from django_logic.exceptions import TransitionNotAllowed
-from django_logic.logger import get_logger
 from django_logic.logger import transition_logger, TransitionEventType
 from django_logic.state import State
 from .tasks import django_logic_background
@@ -16,11 +14,10 @@ class BaseTransition(ABC):
     """
     side_effects_class = SideEffects
     callbacks_class = Callbacks
-    failure_callbacks_class = Callbacks
     failure_side_effects_class = FailureSideEffects
+    failure_callbacks_class = FailureCallbacks
     permissions_class = Permissions
     conditions_class = Conditions
-    next_transition_class = NextTransition
 
     def is_valid(self, instance: object, user=None) -> bool:
         raise NotImplementedError
@@ -78,10 +75,6 @@ class Transition(BaseTransition):
         self.callbacks = self.callbacks_class(kwargs.get('callbacks', []), transition=self)
         self.permissions = self.permissions_class(kwargs.get('permissions', []), transition=self)
         self.conditions = self.conditions_class(kwargs.get('conditions', []), transition=self)
-        self.next_transition = self.next_transition_class(kwargs.get('next_transition', None))
-        # DEPRECATED
-        self.logger = get_logger(module_name=__name__)
-
 
     def __str__(self):
         return f"Transition: {self.action_name} to {self.target}"
@@ -131,7 +124,7 @@ class Transition(BaseTransition):
             kwargs.get('background_mode_phase_2', False)
             and kwargs.get('root_id') == kwargs.get('tr_id')
         )
-        if not skip_lock:
+        if not skip_lock and self.target:
             if state.is_locked() or not state.lock():
                 raise TransitionNotAllowed("State is locked")
 
@@ -154,6 +147,8 @@ class Transition(BaseTransition):
                     f"{kwargs.get('tr_id')} {TransitionEventType.FAIL.value}: {type(e).__name__}: {e}",
                     exc_info=True,
                 )
+                # TODO: failed_callbacks can stop the exception from propagating to parent transitions
+                # TODO: Re-raise the exception to propagate to parent transitions
                 # raise
 
         return kwargs.get('tr_id', None)
@@ -164,23 +159,13 @@ class Transition(BaseTransition):
         The instance will be unlocked and callbacks executed
         :param state: State object
         """
-        state.set_state(self.target)
-        # DEPRECATED
-        log_data = state.get_log_data()
-        log_data.update({'user': kwargs.get('user', None)})
-        self.logger.info(f'{state.instance_key} state changed to {self.target}',
-                         log_type=LogType.TRANSITION_COMPLETED,
-                         log_data=log_data)
-
-        # TODO: I believe logs should be triggered into state methods instead of transition methods
-        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.SET_STATE.value} {self.target}')
-
-        state.unlock()
-        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.UNLOCK.value}')
+        if self.target:
+            state.set_state(self.target)
+            transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.SET_STATE.value} {self.target}')
+            state.unlock()
+            transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.UNLOCK.value}')
 
         self.callbacks.execute(state, **kwargs)
-        # TODO: Can we use a callback to execute the next transition instead?
-        self.next_transition.execute(state, **kwargs)
 
     def run_in_background(self, state: State, **kwargs):
         """
@@ -197,18 +182,13 @@ class Transition(BaseTransition):
         """
         if self.failed_state:
             state.set_state(self.failed_state)
-            # DEPRECATED
-            log_data = state.get_log_data()
-            log_data.update({'user': kwargs.get('user', None)})
-            self.logger.info(f'{state.instance_key} state changed to {self.failed_state}',
-                             log_type=LogType.TRANSITION_FAILED,
-                             log_data=log_data)
             transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.SET_STATE.value} {self.failed_state}')
 
         self.failure_side_effects.execute(state, exception=exception, **kwargs)
 
-        state.unlock()
-        transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.UNLOCK.value}')
+        if self.target or self.failed_state:
+            state.unlock()
+            transition_logger.info(f'{kwargs.get("tr_id")} {TransitionEventType.UNLOCK.value}')
 
         self.failure_callbacks.execute(state, exception=exception, **kwargs)
 
@@ -247,37 +227,14 @@ class BackgroundTransition(Transition):
 
 
 class Action(Transition):
-    """
-    Action, in contrast with Transition class, does not change the state during the normal execution.
-    However, it allows to change the state to the failed one in case if such behaviour needed.
-
-    Once executed, it validates whether or not the state is not locked at the moment,
-    then it makes sure if the conditions and permissions are satisfied. Once it's done,
-    it start running the provided list of side-effect functions. If succeed without exception,
-    it runs the callback functions.
-    Otherwise if an exception has been raised it start executing `failure callbacks` and
-    changes the state to the failed one and unlocks the state field.
-    """
+    """ Action is a transition that does not change the state """
     def __init__(self, action_name: str,  sources: list, **kwargs):
         super().__init__(action_name=action_name, sources=sources,  target='', **kwargs)
 
     def __str__(self):
         return f"Action: {self.action_name}"
 
-    def change_state(self, state: State, **kwargs) -> UUID | None:
-        """
-        it run side effects which should run `complete_transition` in case of success
-        or `fail_transition` in case of failure.
-        :param state: State object
-        """
-        # TODO: UUID for actions?
-        self._init_transition_context(kwargs)
-        self.side_effects.execute(state, **kwargs)
 
-    def complete_transition(self, state: State, **kwargs):
-        """
-        It completes the action for provided state and runs callbacks.
-        :param state: State object
-        """
-        self.callbacks.execute(state, **kwargs)
-
+class BackgroundAction(Action):
+    """ Action that should be run in background by default """
+    run_in_background_by_default = True

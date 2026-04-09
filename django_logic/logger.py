@@ -79,6 +79,7 @@ class TransitionEventType(Enum):
     SIDE_EFFECT = 'SideEffect'
     CALLBACK = 'Callback'
     FAILURE_SIDE_EFFECT = 'FailureSideEffect'
+    FAILURE_CALLBACK = 'FailureCallback'
     SET_STATE = 'Set State'
     LOCK = 'Lock'
     UNLOCK = 'Unlock'

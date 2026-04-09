@@ -16,7 +16,7 @@ It answers **what** the app does, not **how** it is implemented.
 Short description (1-2 sentences)
 
 -------------------------------------------------------------------------------
-# Data Models
+# Entities
 
 -------------------------------------------------------------------------------
 # Business Rules
@@ -25,14 +25,14 @@ Short description (1-2 sentences)
 # Runtime
 
 -------------------------------------------------------------------------------
-# Others
+# CLI
 ```
 
 Use `---...---` horizontal separators between top-level sections.
 
-## Data Models
+## Entities
 
-Order models by importance: core entities first, then dependencies.
+Order entities by importance: core entities first, then dependencies.
 
 Add a legend at the top of the section:
 
@@ -48,7 +48,7 @@ Each model follows this template:
 ## <ModelName>
 Brief description (1 sentence)
 **Source:** <external source>        ← only if data comes from outside
-**Storage** <redis | db | Django settings | etc.>
+**Storage** <redis | db | config | cache | enum | etc.>
 **Fields**
 - field_name    type - optional comment
 - other_field   -> OtherModel
@@ -70,7 +70,7 @@ Rules:
 Scheduled or event-driven tasks. Format:
 
 ```
-- <job_name> | <trigger>: <schedule or event> | <what it does>
+- <job_name> | schedule: <schedule or event> | <what it does>
 ```
 
 ### Processes / Actions
@@ -101,12 +101,11 @@ Describe **what** must be running, not how it is deployed.
 Brief description of the runtime unit
 ```
 
-## Others
+## CLI
 
-Anything that doesn't fit above: management commands, CLI tools, notes.
+Commands and tools available from the command line.
 
 ```
-## Django manager commands
 **command_name** short description
 ```
 

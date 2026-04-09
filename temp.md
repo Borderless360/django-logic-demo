@@ -21,3 +21,12 @@ rule который читает доки? а как понять что это 
 
 
 сделать отдельные команды на каждую анамалию
+
+
+# --------------------------
+project.spec.md
+service.spec.md
+module.spec.md
+lib.spec.md
+
+They should have own rules and formats.

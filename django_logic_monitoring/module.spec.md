@@ -1,35 +1,22 @@
 # Django Logic Monitoring
-Django app of monitoring `django-logic` logs for detecting anomalies
-and performing actions in response to detected anomalies
-
+Monitoring system that reads execution logs, tracks transition states,
+detects anomalies, and sends notifications about detected problems
 -------------------------------------------------------------------------------
-# Data Models
-Models are ordered by importance: core entities first, then their dependencies
+# Entities
+Ordered by importance: core entities first, then their dependencies
 type? - not required
 -> one to many  
 -- one to one
 
-## Log 
-Django Logic logs
-**Source:** Django Logic 
-- logs table from clickhouse
-**Constraints**
-- read only 
-
-## LastLogTimestamp
-A global value of timestamp of last reading log
-**Storage** redis
-**Fields**
-- timestamp     datetime
-
 ## Transition
-State of django logic transition 
+Tracked execution of a state transition in the monitored system
 **Storage** redis
 **Fields**
 - id            UUID
 - parent_id     -> Transition 
 - root_id       -> Transition
 - process       str - name of process
+- action        str - name of action/transition
 - model_name    str
 - object_id     str
 - field_name    str - field with state
@@ -42,8 +29,40 @@ State of django logic transition
 **Constraints**
 - the transition is not completed until the whole chain is completed (including child transitions)
 
+## Anomaly
+A detected anomaly within a tracked transition
+**Storage** redis
+**Fields**
+- id            number 
+- tr_id         -> Transition 
+- process       str
+- action        str
+- step_type     str
+- step_name     str
+- type          -> AnomalyType
+- timestamp     datetime when we detect it
+**Constraints**
+- tr_id, type - unique together
+
+## AnomalyType
+**Storage** enum
+- id            number 
+- name          str
+
+## Log 
+Django Logic logs
+**Source:** django-logic logs (clickhouse)
+**Constraints**
+- read only - the system consumes but never writes logs
+
+## LastLogTimestamp
+Cursor position: timestamp of the most recently processed log entry
+**Storage** redis
+**Fields**
+- timestamp     datetime
+
 ## Stat
-Execution time for actions/transitions and their side effects (no callbacks)
+Execution time statistics per action step (excludes post-commit effects)
 **Storage** redis
 **Fields**
 - id            number
@@ -82,34 +101,14 @@ Rolling counter of transition starts per object + process + action
 - model_name, object_id, process, action - unique together
 - timestamps older than DLM_LOOP_WINDOW are pruned on each update
 
-## AnomalyType
-**Storage** python enum
-- id            number 
-- name          str
-
-## Anomaly
-The fact of catch an anomaly into the transition.
-**Storage** redis
-**Fields**
-- id            number 
-- tr_id         -> Transition 
-- process       str
-- action        str
-- step_type     str
-- step_name     str
-- type          -> AnomalyType
-- timestamp     datetime when we detect it
-**Constraints**
-- tr_id, type - unique together
-
 ## Config
-**Storage** Django settings
+**Storage** config
 **Fields**
 - DLM_CLICKHOUSE_CLIENT_PATH  str - dotted import path to ClickHouse client (default "clickhouse.client.client")
 - DLM_DEFAULT_TIME_LIMIT      number - fallback time limit in seconds when too few executions for statistical threshold (default 300)
 - DLM_MONITORING_DELAY        number - interval in seconds between monitoring runs (default 10)
 - DLM_MIN_EXECUTIONS          number - minimum recorded executions required to compute statistical time_limit (default 5)
-- DLM_MAX_EXECUTIONS          number - max execution times kept per Stat record (default 50)
+- DLM_MAX_EXECUTIONS          number - max execution times kept per Stat record (default 100)
 - DLM_MAX_PAGES_PER_RUN       number - max log pages fetched per single monitoring run (default 50)
 - DLM_MONITORING_SINCE        datetime? - ignore logs before this timestamp
 - DLM_STUCK_TIMEOUT           number - seconds without events before transition is considered stuck (default 600)
@@ -125,25 +124,18 @@ The fact of catch an anomaly into the transition.
 ## Jobs
 Scheduled or event-driven tasks that run without user interaction.
 Defines *what* should happen and *when* (business rule).
-- monitoring | celery: every DLM_MONITORING_DELAY seconds | run fetch_logs and detect_anomaly actions of main process
+- monitoring | schedule: every DLM_MONITORING_DELAY seconds | run fetch_logs and detect_anomaly actions of main process
 
-## Main Process
+## Monitoring
 **Actions**
 - *fetch_logs*
   do: read logs
   do: update transitions
-  do: remove completed transitions (with or without errors)
   do: update stats
-- *detect_anomaly*
-  do: detect `long execution` anomaly
-  do: detect `stuck transition` anomaly
-  do: detect `frequent failures` anomaly
-  do: detect `execution time degradation` anomaly
-  do: detect `loop detection` anomaly
-  do: send notification to console about new anomaly
-- *clear*
   do: remove completed transitions
-  do: remove other garbage
+- *detect_anomaly*
+  do: detect anomalies
+  then: send notification to console about new anomaly
 
 ## Anomaly
 **Long execution**
@@ -169,19 +161,10 @@ within a sliding time window (DLM_LOOP_WINDOW).
 Triggered when count exceeds DLM_LOOP_THRESHOLD within the window.
 
 -------------------------------------------------------------------------------
-# Runtime
-Logical units that compose the running service.
-Defines *what* must be running, not *how* it is deployed.
-
-## django-logic-monitoring-worker
-Celery worker that runs the monitoring task
-
--------------------------------------------------------------------------------
-# Others
-## Django manager commands
+# CLI
+**dlm_fetch_logs**              run fetch_logs action
+**dlm_detect_anomaly**          run detect_anomaly action
 **dlm_get_current_transitions** return active transitions with states
-**dlm_fetch_logs** run fetch_logs action
-**dlm_detect_anomaly** run detect_anomaly action
-**dlm_get_stats** show collected execution-time statistics
-**dlm_get_anomalies** show detected execution-time anomalies
-**dlm_clear_stats** clear all collected execution-time statistics
+**dlm_get_stats**               show collected execution-time statistics
+**dlm_get_anomalies**           show detected execution-time anomalies
+**dlm_clear_stats**             clear all collected execution-time statistics

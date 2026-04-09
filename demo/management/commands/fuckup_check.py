@@ -1,4 +1,4 @@
-"""Management command to show logs with Background Mode SideEffectSingleTask queued."""
+"""Management command to show logs with Background Mode SideEffect*Task(s) queued."""
 from datetime import datetime, timedelta, timezone
 
 from django.core.management.base import BaseCommand
@@ -128,8 +128,13 @@ class Command(BaseCommand):
             help="Length of each time window in hours (default: 12).",
         )
 
+    
+
     def handle(self, *args, **options):
-        pattern = "%Background Mode SideEffectSingleTask queued with%"
+        patterns = [
+            "%Background Mode SideEffectSingleTask queued with%",
+            "%Background Mode SideEffectTasks queued with%",
+        ]
         since_days = options["since_days"]
         window_hours = options["window_hours"]
         total_read = 0
@@ -155,10 +160,11 @@ class Command(BaseCommand):
             lo = _ts_to_ch_literal(hour_start)
             hi = _ts_to_ch_literal(hour_end)
 
+            like_clauses = " OR ".join(f"msg LIKE '{p}'" for p in patterns)
             query = f"""
                 SELECT _timestamp, msg
                 FROM logs
-                WHERE msg LIKE '{pattern}'
+                WHERE ({like_clauses})
                   AND _timestamp >= toDateTime64('{lo}', 3)
                   AND _timestamp < toDateTime64('{hi}', 3)
                 ORDER BY _timestamp

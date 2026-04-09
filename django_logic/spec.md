@@ -4,8 +4,8 @@ Manages state transitions with locking, permissions, conditions,
 side effects, and background execution via Celery.
 
 -------------------------------------------------------------------------------
-# Data Models
-Models are ordered by importance: core entities first, then their dependencies
+# Entities
+Ordered by importance: core entities first, then their dependencies
 type? - not required
 -> one to many
 -- one to one
@@ -48,7 +48,7 @@ Named group of transitions and nested sub-processes bound to a model state field
 
 ## State
 Wrapper around a model instance's state field; provides read, write, and cache-based locking
-**Storage** Django cache (Redis)
+**Storage** cache (redis)
 **Fields**
 - instance       any Django model instance
 - field_name     str - model field that holds the state value
@@ -63,7 +63,7 @@ Wrapper around a model instance's state field; provides read, write, and cache-b
 State with optimistic locking (cache set nx=True); only first caller acquires the lock
 
 ## Config
-**Storage** Django settings
+**Storage** config
 **Fields**
 - DJANGO_LOGIC_DEFAULT_QUEUE      str - Celery queue for background transitions (default "celery")
 - DJANGO_LOGIC_DISABLE_LOGGING    bool - disable deprecated logger (default False)
