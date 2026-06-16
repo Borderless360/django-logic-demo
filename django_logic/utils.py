@@ -51,5 +51,5 @@ def restore_action(
     process_class_obj = getattr(module, class_name)
     process =process_class_obj(field_name=field_name, instance=instance)
 
-    transition = process.get_transition_by_action_name(action_name=action_name, user=user)
+    transition = process.get_transition_by_action_name(action_name=action_name, user=user, ignore_sources=True)
     return process, transition
